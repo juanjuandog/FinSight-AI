@@ -72,19 +72,64 @@ More detail: [Architecture Notes](docs/architecture.md)
 
 ## Quick Start
 
-### 1. Run the full stack
+### 0. Prerequisites
 
 ```bash
-./scripts/run-full-stack.sh
+docker --version
+docker compose version
 ```
 
-Then open:
+- Docker Engine with Docker Compose v2, such as Docker Desktop, OrbStack, Colima, or a Linux Docker daemon.
+- 8 GB or more available memory is recommended for the full stack because Elasticsearch, PostgreSQL, RabbitMQ, Redis, MinIO, the Spring Boot backend, and the FastAPI sidecar run together.
+- No secrets are required for the default local demo. Ollama is optional; without it, the AI sidecar returns deterministic rule-based analysis.
+
+Optional non-Docker tooling:
+
+- Java 17 and Maven 3.9+ for `cd backend && mvn spring-boot:run`.
+- Python 3.12 for running `ai-service` directly.
+- Ollama with `qwen2.5:7b` for local LLM-backed analysis.
+
+### 1. Clone and run the full stack as a background service
 
 ```bash
+git clone https://github.com/juanjuandog/FinSight-AI ~/work/FinSight-AI
+cd ~/work/FinSight-AI
+docker compose up -d --build
+```
+
+This starts the backend, dashboard, PostgreSQL/pgvector, RabbitMQ, Redis, the FastAPI AI sidecar, Elasticsearch, and MinIO in detached mode. The containers keep running after the terminal closes.
+
+Check status and open the app:
+
+```bash
+docker compose ps
+curl -fsS http://localhost:8080/actuator/health
+curl -fsS http://localhost:8001/health
 open http://localhost:8080
 ```
 
-This starts the backend, dashboard, PostgreSQL/pgvector, RabbitMQ, Redis, the FastAPI AI sidecar, and supporting infrastructure. If Ollama is not running, the AI service returns deterministic fallback analysis so the demo still works.
+Service management:
+
+```bash
+docker compose logs -f backend
+docker compose restart backend ai-service
+docker compose stop
+docker compose start
+docker compose down
+```
+
+Published local URLs:
+
+| Service | URL |
+| --- | --- |
+| Dashboard and Spring Boot API | `http://localhost:8080` |
+| Backend health | `http://localhost:8080/actuator/health` |
+| FastAPI AI sidecar health | `http://localhost:8001/health` |
+| RabbitMQ management UI | `http://localhost:15672` |
+| Elasticsearch | `http://localhost:9200` |
+| MinIO API / console | `http://localhost:9000` / `http://localhost:9001` |
+
+Default local credentials are defined in `docker-compose.yml` (`finsight` / `finsight` for PostgreSQL and RabbitMQ; `finsight` / `finsight123` for MinIO).
 
 ### 2. Seed and exercise the demo
 
@@ -110,15 +155,15 @@ GET  /api/companies/600519/ai-analysis/latest
 GET  /api/document-index/600519/search?q=现金流风险
 ```
 
-Example demo output after `./scripts/quick-demo.sh`:
+Example demo signals after `./scripts/quick-demo.sh`:
 
 | Signal | Example Result |
 | --- | --- |
-| Agent workflow | `1/1 tasks`, `0 failed/dead-letter` |
-| RAG evaluation | `85 / 100`, `2/3 cases passed` |
+| Ingestion | `documentCount: 6`, `statementCount: 3` |
+| Metric engine | `metricCount: 60`, `riskSignalCount: 2` |
 | Evidence index | `6 documents`, `6 chunks` for `600519` |
 | Intelligence graph | `20 events`, `36 entities`, `47 relations` |
-| Report cache | `dataSnapshotHash + contextHash + reportVersion` |
+| RAG evaluation | `totalCases: 3` with scores that vary as public source data changes |
 
 ### 3. Run without Docker
 
@@ -193,6 +238,37 @@ The FastAPI sidecar calls `OLLAMA_BASE_URL` (`http://localhost:11434` by default
 (`qwen2.5:7b` by default) from `/analyze-stock`. If Ollama is not installed, not running, or the model is
 missing, the endpoint returns a deterministic rule-based fallback with `aiGenerated=false`, so the dashboard
 keeps working.
+
+## Local Configuration
+
+The default Docker Compose setup does not require an `.env` file. Override these variables only when you need different local infrastructure or optional LLM behavior:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` in Docker | Optional local Ollama endpoint for the AI sidecar |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Optional Ollama model name |
+| `OLLAMA_TIMEOUT_SECONDS` | `45` | Timeout for sidecar calls to Ollama |
+| `FINSIGHT_SCHEDULER_ENABLED` | `false` | Enables scheduled stock-universe sync and batch analysis |
+| `FINSIGHT_SCHEDULER_BATCH_LIMIT` | `20` | Max scheduled batch size |
+| `FINSIGHT_STOCK_UNIVERSE_FREE_PROVIDER_ENABLED` | `true` | Enables free public stock-universe providers |
+| `FINSIGHT_AI_SERVICE_ENABLED` | `true` in the Docker profile | Lets the backend call the FastAPI sidecar |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://postgres:5432/finsight` in Docker | Backend PostgreSQL connection |
+| `SPRING_DATASOURCE_USERNAME` | `finsight` | Backend PostgreSQL username |
+| `SPRING_DATASOURCE_PASSWORD` | `finsight` | Backend PostgreSQL password |
+| `SPRING_RABBITMQ_HOST` | `rabbitmq` in Docker | Backend RabbitMQ host |
+| `SPRING_RABBITMQ_USERNAME` | `finsight` | Backend RabbitMQ username |
+| `SPRING_RABBITMQ_PASSWORD` | `finsight` | Backend RabbitMQ password |
+| `SPRING_DATA_REDIS_URL` | `redis://redis:6379` in Docker | Backend Redis connection |
+| `FINSIGHT_AI_SERVICE_URL` | `http://ai-service:8001` in Docker | Backend-to-sidecar URL |
+
+`scripts/quick-demo.sh` also accepts `BASE_URL` and `OUTPUT_DIR` if the backend is not on `http://localhost:8080` or if you want to save JSON responses.
+
+### Troubleshooting
+
+- Docker daemon unavailable: start Docker Desktop, OrbStack, Colima, or your Linux Docker service, then rerun `docker compose ps`.
+- Port already in use: stop the conflicting local service or edit the host-side ports in `docker-compose.yml`.
+- First build is slow: Maven and Python dependencies are downloaded during the first image build; later builds use Docker cache.
+- Ollama unavailable: this is not fatal. The sidecar reports the configured model in `/health` and returns deterministic fallback analysis when Ollama is not reachable.
 
 ## Sample API Flow
 

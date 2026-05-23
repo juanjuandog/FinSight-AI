@@ -72,19 +72,64 @@ flowchart LR
 
 ## 快速开始
 
-### 1. 启动完整栈
+### 0. 前置依赖
 
 ```bash
-./scripts/run-full-stack.sh
+docker --version
+docker compose version
 ```
 
-然后打开：
+- Docker Engine 和 Docker Compose v2，例如 Docker Desktop、OrbStack、Colima 或 Linux Docker daemon。
+- 完整栈会同时运行 Elasticsearch、PostgreSQL、RabbitMQ、Redis、MinIO、Spring Boot backend 和 FastAPI sidecar，建议预留 8 GB 以上内存。
+- 默认本地 Demo 不需要任何密钥。Ollama 是可选项；未安装或未运行时，AI sidecar 会返回确定性的规则分析。
+
+可选的非 Docker 工具：
+
+- Java 17 和 Maven 3.9+，用于 `cd backend && mvn spring-boot:run`。
+- Python 3.12，用于直接运行 `ai-service`。
+- Ollama 和 `qwen2.5:7b`，用于本地大模型分析。
+
+### 1. 克隆并以后台服务启动完整栈
 
 ```bash
+git clone https://github.com/juanjuandog/FinSight-AI ~/work/FinSight-AI
+cd ~/work/FinSight-AI
+docker compose up -d --build
+```
+
+这会以 detached 模式启动 backend、Dashboard、PostgreSQL/pgvector、RabbitMQ、Redis、FastAPI AI sidecar、Elasticsearch 和 MinIO。终端关闭后容器仍会继续运行。
+
+检查状态并打开页面：
+
+```bash
+docker compose ps
+curl -fsS http://localhost:8080/actuator/health
+curl -fsS http://localhost:8001/health
 open http://localhost:8080
 ```
 
-完整栈会启动 backend、Dashboard、PostgreSQL/pgvector、RabbitMQ、Redis、FastAPI AI sidecar 以及辅助基础设施。没有安装 Ollama 也可以运行，系统会自动降级为确定性规则分析，保证 Demo 可用。
+服务管理命令：
+
+```bash
+docker compose logs -f backend
+docker compose restart backend ai-service
+docker compose stop
+docker compose start
+docker compose down
+```
+
+本地访问地址：
+
+| 服务 | 地址 |
+| --- | --- |
+| Dashboard 和 Spring Boot API | `http://localhost:8080` |
+| Backend health | `http://localhost:8080/actuator/health` |
+| FastAPI AI sidecar health | `http://localhost:8001/health` |
+| RabbitMQ management UI | `http://localhost:15672` |
+| Elasticsearch | `http://localhost:9200` |
+| MinIO API / console | `http://localhost:9000` / `http://localhost:9001` |
+
+默认本地账号密码在 `docker-compose.yml` 中定义：PostgreSQL 和 RabbitMQ 为 `finsight` / `finsight`，MinIO 为 `finsight` / `finsight123`。
 
 ### 2. 运行 Demo 数据流
 
@@ -110,15 +155,15 @@ GET  /api/companies/600519/ai-analysis/latest
 GET  /api/document-index/600519/search?q=现金流风险
 ```
 
-`./scripts/quick-demo.sh` 后的示例结果：
+`./scripts/quick-demo.sh` 后的示例信号：
 
-| 指标 | 示例结果 |
+| 信号 | 示例结果 |
 | --- | --- |
-| Agent workflow | `1/1 tasks`, `0 failed/dead-letter` |
-| RAG evaluation | `85 / 100`, `2/3 cases passed` |
+| Ingestion | `documentCount: 6`、`statementCount: 3` |
+| Metric engine | `metricCount: 60`、`riskSignalCount: 2` |
 | Evidence index | `600519` 有 `6 documents`、`6 chunks` |
 | Intelligence graph | `20 events`、`36 entities`、`47 relations` |
-| Report cache | `dataSnapshotHash + contextHash + reportVersion` |
+| RAG evaluation | `totalCases: 3`，具体分数会随公开数据源变化 |
 
 ### 3. 不使用 Docker 运行
 
@@ -184,6 +229,37 @@ ollama pull qwen2.5:7b
 ```
 
 如果 Ollama 未安装、未运行或模型缺失，系统会返回 `aiGenerated=false` 的规则兜底结果，Dashboard 仍然可用。
+
+## 本地配置
+
+默认 Docker Compose 配置不需要 `.env` 文件。只有需要替换本地基础设施或启用可选 LLM 行为时，才需要覆盖这些变量：
+
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `OLLAMA_BASE_URL` | Docker 中为 `http://host.docker.internal:11434` | 可选本地 Ollama 地址 |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | 可选 Ollama 模型名 |
+| `OLLAMA_TIMEOUT_SECONDS` | `45` | AI sidecar 调用 Ollama 的超时时间 |
+| `FINSIGHT_SCHEDULER_ENABLED` | `false` | 是否启用股票池同步和批量分析调度 |
+| `FINSIGHT_SCHEDULER_BATCH_LIMIT` | `20` | 调度批量任务上限 |
+| `FINSIGHT_STOCK_UNIVERSE_FREE_PROVIDER_ENABLED` | `true` | 是否启用免费公开股票池数据源 |
+| `FINSIGHT_AI_SERVICE_ENABLED` | Docker profile 中为 `true` | backend 是否调用 FastAPI sidecar |
+| `SPRING_DATASOURCE_URL` | Docker 中为 `jdbc:postgresql://postgres:5432/finsight` | backend PostgreSQL 连接 |
+| `SPRING_DATASOURCE_USERNAME` | `finsight` | backend PostgreSQL 用户名 |
+| `SPRING_DATASOURCE_PASSWORD` | `finsight` | backend PostgreSQL 密码 |
+| `SPRING_RABBITMQ_HOST` | Docker 中为 `rabbitmq` | backend RabbitMQ host |
+| `SPRING_RABBITMQ_USERNAME` | `finsight` | backend RabbitMQ 用户名 |
+| `SPRING_RABBITMQ_PASSWORD` | `finsight` | backend RabbitMQ 密码 |
+| `SPRING_DATA_REDIS_URL` | Docker 中为 `redis://redis:6379` | backend Redis 连接 |
+| `FINSIGHT_AI_SERVICE_URL` | Docker 中为 `http://ai-service:8001` | backend 到 sidecar 的 URL |
+
+`scripts/quick-demo.sh` 还支持 `BASE_URL` 和 `OUTPUT_DIR`，分别用于指定 backend 地址和保存 JSON 响应。
+
+### 常见问题
+
+- Docker daemon 不可用：先启动 Docker Desktop、OrbStack、Colima 或 Linux Docker 服务，再运行 `docker compose ps`。
+- 端口被占用：停止冲突服务，或修改 `docker-compose.yml` 中的宿主机端口。
+- 首次构建较慢：第一次镜像构建会下载 Maven 和 Python 依赖，后续构建会复用 Docker cache。
+- Ollama 不可用：不影响启动。`/health` 会显示配置的模型名，AI sidecar 在无法访问 Ollama 时会返回确定性兜底分析。
 
 ## 示例 API 流程
 

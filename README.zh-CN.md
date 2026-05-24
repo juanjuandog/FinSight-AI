@@ -14,7 +14,33 @@ FinSight 是一个面向股票投研场景的开源 AI Agent 后端平台，核�
 
 这个项目不是简单的“调大模型接口” Demo，而是重点展示 AI Agent 背后的后端工程能力：长链路任务治理、幂等调度、失败恢复、可信缓存、证据追踪和输出质量评测。
 
-![FinSight dashboard preview](docs/dashboard-preview.png)
+## 前端产品展示
+
+FinSight 自带一个可运行的机构投研控制台。这个前端不是简单装饰页，而是把后端生成的投研工作流、报告缓存、证据链、RAG 评测和财务风险信号都展示出来。
+
+### 投研工作台
+
+![FinSight 投研工作台](docs/readme-ui-overview.png)
+
+- 支持输入股票代码，集中查看行情状态、价格走势、均线、成交量和 AI 投研结论。
+- 行情历史优先使用真实市场 K 线，离线或接口不可用时使用确定性 fallback 数据，方便面试和本地演示。
+- AI Brief 会输出评级、置信度、核心理由和风险点，而不是只返回一段不可追踪的聊天文本。
+
+### Agent 工作流与可信报告
+
+![FinSight Agent 工作流和报告追踪](docs/readme-ui-workflow-trace.png)
+
+- 页面直接展示 Research Task 状态机：创建、采集、指标计算、索引、画像、研报生成和完成。
+- 每个任务暴露幂等 key、attempts、lease owner、fencing token 等字段，让并发控制和任务治理能力可以被看见。
+- Report Trace 展示 `reportVersion`、`dataSnapshotHash`、缓存命中、模型来源、生成时间，以及与报告结论绑定的证据 chunk。
+
+### 指标、风险与证据链
+
+![FinSight 指标和证据链工作区](docs/readme-ui-evidence-quality.png)
+
+- 将财务指标沉淀成投研视角的健康卡片，包括盈利能力、成长能力、现金流质量和资产负债率。
+- 证据检索会返回来自公告、财报和结构化财务摘要的可追溯片段。
+- 同一套证据层支撑 RAG 回答、报告引用、幻觉风险检测和评测回归用例。
 
 ## 为什么做这个项目
 

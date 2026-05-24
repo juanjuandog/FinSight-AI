@@ -135,10 +135,10 @@ def analyze_stock(request: StockAnalysisRequest) -> StockAnalysisResponse:
     fallback = fallback_stock_analysis(request)
     try:
         return call_ollama_stock_analysis(request, fallback)
-    except Exception as exc:  # noqa: BLE001 - local demos should keep working without Ollama.
+    except Exception:  # noqa: BLE001 - local demos should keep working without Ollama.
         return fallback.model_copy(update={
             "source": "fallback-rule",
-            "model": f"{ollama_model()} unavailable: {exc}",
+            "model": fallback.model,
             "aiGenerated": False,
         })
 

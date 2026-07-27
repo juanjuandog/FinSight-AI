@@ -37,17 +37,30 @@ public class RedisBackedWorkflowLeaseService implements WorkflowLeaseService {
             end
             return 0
             """;
+    private static final String RENEW_LUA = """
+            local leaseKey = KEYS[1]
+            local expected = ARGV[1]
+            local ttlMillis = tonumber(ARGV[2])
+            if redis.call('get', leaseKey) == expected then
+                redis.call('pexpire', leaseKey, ttlMillis)
+                return 1
+            end
+            return 0
+            """;
 
     private final StringRedisTemplate redisTemplate;
     private final String ownerPrefix;
+    private final boolean allowLocalFallback;
     private final ConcurrentHashMap<String, WorkflowLease> localLeases = new ConcurrentHashMap<>();
     private final AtomicLong localFence = new AtomicLong();
 
     public RedisBackedWorkflowLeaseService(
             ObjectProvider<StringRedisTemplate> redisTemplate,
-            @Value("${finsight.workflow.lease-owner:}") String configuredOwner
+            @Value("${finsight.workflow.lease-owner:}") String configuredOwner,
+            @Value("${finsight.workflow.allow-local-lease-fallback:true}") boolean allowLocalFallback
     ) {
         this.redisTemplate = redisTemplate.getIfAvailable();
+        this.allowLocalFallback = allowLocalFallback;
         this.ownerPrefix = configuredOwner == null || configuredOwner.isBlank()
                 ? ManagementFactory.getRuntimeMXBean().getName()
                 : configuredOwner;
@@ -66,9 +79,14 @@ public class RedisBackedWorkflowLeaseService implements WorkflowLeaseService {
                         String.valueOf(ttl.toMillis())
                 );
                 return token == null ? Optional.empty() : Optional.of(new WorkflowLease(key, owner, token, expiresAt));
-            } catch (RuntimeException ignored) {
-                // Fall back to local single-flight when Redis is not reachable in local/dev mode.
+            } catch (RuntimeException ex) {
+                if (!allowLocalFallback) {
+                    throw new IllegalStateException("Redis lease acquisition failed and local fallback is disabled", ex);
+                }
             }
+        }
+        if (!allowLocalFallback) {
+            throw new IllegalStateException("Redis lease service is unavailable and local fallback is disabled");
         }
         WorkflowLease lease = new WorkflowLease(key, owner, localFence.incrementAndGet(), expiresAt);
         WorkflowLease existing = localLeases.compute(key, (ignored, current) -> {
@@ -81,6 +99,36 @@ public class RedisBackedWorkflowLeaseService implements WorkflowLeaseService {
     }
 
     @Override
+    public Optional<WorkflowLease> renew(WorkflowLease lease, Duration ttl) {
+        WorkflowLease renewed = new WorkflowLease(
+                lease.key(),
+                lease.owner(),
+                lease.fencingToken(),
+                Instant.now().plus(ttl)
+        );
+        if (redisTemplate != null) {
+            try {
+                Long result = redisTemplate.execute(
+                        new DefaultRedisScript<>(RENEW_LUA, Long.class),
+                        List.of(redisKey(lease.key())),
+                        lease.owner() + ":" + lease.fencingToken(),
+                        String.valueOf(ttl.toMillis())
+                );
+                return Long.valueOf(1).equals(result) ? Optional.of(renewed) : Optional.empty();
+            } catch (RuntimeException ex) {
+                if (!allowLocalFallback) {
+                    throw new IllegalStateException("Redis lease renewal failed and local fallback is disabled", ex);
+                }
+            }
+        }
+        if (!allowLocalFallback) {
+            throw new IllegalStateException("Redis lease service is unavailable and local fallback is disabled");
+        }
+        boolean replaced = localLeases.replace(lease.key(), lease, renewed);
+        return replaced ? Optional.of(renewed) : Optional.empty();
+    }
+
+    @Override
     public void release(WorkflowLease lease) {
         if (redisTemplate != null) {
             try {
@@ -90,8 +138,10 @@ public class RedisBackedWorkflowLeaseService implements WorkflowLeaseService {
                         lease.owner() + ":" + lease.fencingToken()
                 );
                 return;
-            } catch (RuntimeException ignored) {
-                // Local fallback cleanup below.
+            } catch (RuntimeException ex) {
+                if (!allowLocalFallback) {
+                    throw new IllegalStateException("Redis lease release failed and local fallback is disabled", ex);
+                }
             }
         }
         localLeases.remove(lease.key(), lease);

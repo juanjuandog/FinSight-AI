@@ -4,6 +4,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+
 @Component
 @Profile("rabbitmq")
 public class RabbitWorkflowTaskPublisher implements WorkflowTaskPublisher {
@@ -17,11 +19,23 @@ public class RabbitWorkflowTaskPublisher implements WorkflowTaskPublisher {
 
     @Override
     public void publish(WorkflowTask task) {
-        rabbitTemplate.convertAndSend(
-                properties.exchange(),
-                properties.ingestionRoutingKey(),
-                WorkflowMessage.from(task)
-        );
+        publish(task, properties.ingestionRoutingKey());
+    }
+
+    @Override
+    public void publishRetry(WorkflowTask task) {
+        publish(task, properties.retryRoutingKey());
+    }
+
+    private void publish(WorkflowTask task, String routingKey) {
+        rabbitTemplate.invoke(operations -> {
+            operations.convertAndSend(
+                    properties.exchange(),
+                    routingKey,
+                    WorkflowMessage.from(task)
+            );
+            operations.waitForConfirmsOrDie(Duration.ofSeconds(5).toMillis());
+            return null;
+        });
     }
 }
-

@@ -204,7 +204,8 @@ open http://localhost:8080
 ## 模块结构
 
 - `backend`：Spring Boot 后端，包含 API、领域工作流、指标计算、RAG 编排和 Dashboard。
-- `ai-service`：FastAPI AI 能力服务，包含文档解析、实体抽取、embedding、rerank 和答案生成接口。
+- `ai-service`：FastAPI AI 能力服务，懒加载多语言语义 embedding 与 cross-encoder
+  reranker，并提供文档解析和答案生成接口；离线环境保留确定性降级路径。
 - `docker`：本地基础设施占位与 compose 支持。
 
 ## 运行模式

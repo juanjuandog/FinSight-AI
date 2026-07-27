@@ -12,6 +12,8 @@ spring:
     port: ${SPRING_RABBITMQ_PORT:5672}
     username: ${SPRING_RABBITMQ_USERNAME:finsight}
     password: ${SPRING_RABBITMQ_PASSWORD:finsight}
+    publisher-confirm-type: correlated
+    publisher-returns: true
   data:
     redis:
       url: ${SPRING_DATA_REDIS_URL:redis://localhost:6379}
@@ -31,6 +33,8 @@ finsight:
   ai-service-url: ${FINSIGHT_AI_SERVICE_URL:http://localhost:8001}
   ai-service:
     enabled: ${FINSIGHT_AI_SERVICE_ENABLED:true}
+  workflow:
+    allow-local-lease-fallback: ${FINSIGHT_ALLOW_LOCAL_LEASE_FALLBACK:false}
   stock-universe:
     free-provider-enabled: ${FINSIGHT_STOCK_UNIVERSE_FREE_PROVIDER_ENABLED:true}
   scheduler:

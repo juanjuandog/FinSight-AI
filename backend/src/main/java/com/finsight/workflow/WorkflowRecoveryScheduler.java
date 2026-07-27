@@ -35,16 +35,28 @@ public class WorkflowRecoveryScheduler {
                 Instant.now().minus(runningTimeout)
         );
         for (WorkflowTask task : timedOut) {
-            WorkflowTask recovered = taskRepository.save(task.recoveredAfterTimeout(
-                    "Workflow timed out at stage " + task.stage()
-            ));
+            WorkflowTask recovered = taskRepository.saveIfOwned(
+                    task.recoveredAfterTimeout("Workflow timed out at stage " + task.stage()),
+                    WorkflowStatus.RUNNING,
+                    task.fencingToken()
+            ).orElse(null);
+            if (recovered == null) {
+                continue;
+            }
             meterRegistry.counter(
                     "finsight.workflow.recovery.total",
                     "taskType", task.taskType(),
                     "stage", task.stage().name()
             ).increment();
             if (recovered.status() == WorkflowStatus.FAILED) {
-                taskPublisher.publish(taskRepository.save(recovered.retrying()));
+                WorkflowTask retrying = taskRepository.saveIfOwned(
+                        recovered.retrying(),
+                        WorkflowStatus.FAILED,
+                        null
+                ).orElse(null);
+                if (retrying != null) {
+                    taskPublisher.publish(retrying);
+                }
             }
         }
     }

@@ -73,7 +73,14 @@ public class WorkflowController {
         if (!task.retryable()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Only FAILED or DEAD_LETTER workflow tasks can be retried");
         }
-        WorkflowTask retrying = taskRepository.save(task.retrying());
+        WorkflowTask retrying = taskRepository.saveIfOwned(
+                task.retrying(),
+                task.status(),
+                task.fencingToken()
+        ).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Workflow task changed while retry was requested"
+        ));
         taskPublisher.publish(retrying);
         WorkflowTask current = taskRepository.findById(taskId).orElse(retrying);
         return new WorkflowRetryResult(

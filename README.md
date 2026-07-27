@@ -204,7 +204,9 @@ open http://localhost:8080
 ## Modules
 
 - `backend`: Spring Boot service for APIs, domain workflow, metrics, and RAG orchestration.
-- `ai-service`: FastAPI service for document parsing, entity extraction, embedding, rerank, and answer generation stubs.
+- `ai-service`: FastAPI service with lazy-loaded multilingual sentence embeddings,
+  cross-encoder reranking, document parsing, and answer generation; deterministic
+  fallbacks keep offline demos available.
 - `docker`: local infrastructure placeholders.
 
 ## Alternative Run Modes

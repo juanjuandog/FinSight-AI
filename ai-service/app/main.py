@@ -9,6 +9,8 @@ import os
 import re
 import time
 
+from app.model_runtime import embed_texts, rerank_scores, runtime_status
+
 app = FastAPI(title="FinSight AI Service", version="0.1.0")
 _stock_universe_cache: dict[str, Any] = {"expiresAt": 0.0, "payload": None}
 
@@ -106,11 +108,11 @@ class StockAnalysisResponse(BaseModel):
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "embeddingModel": "hashing-ngram-384",
         "ollamaModel": ollama_model(),
+        **runtime_status(),
     }
 
 
@@ -145,16 +147,46 @@ def analyze_stock(request: StockAnalysisRequest) -> StockAnalysisResponse:
 
 @app.post("/embed", response_model=EmbedResponse)
 def embed(request: EmbedRequest) -> EmbedResponse:
-    embeddings = [hashing_embedding(text, request.dimension) for text in request.texts]
+    model_name = f"hashing-ngram-{request.dimension}"
+    embeddings = None
+    try:
+        embeddings = embed_texts(request.texts)
+        if embeddings and any(len(vector) != request.dimension for vector in embeddings):
+            embeddings = None
+    except Exception:  # noqa: BLE001 - deterministic fallback remains available.
+        embeddings = None
+    if embeddings is None:
+        embeddings = [hashing_embedding(text, request.dimension) for text in request.texts]
+    else:
+        model_name = str(runtime_status()["embeddingModel"])
     return EmbedResponse(
         embeddings=embeddings,
-        model=f"hashing-ngram-{request.dimension}",
+        model=model_name,
         dimension=request.dimension,
     )
 
 
 @app.post("/rerank", response_model=RerankResponse)
 def rerank(request: RerankRequest) -> RerankResponse:
+    passages = [
+        chunk.title + "\n" + chunk.section + "\n" + chunk.text
+        for chunk in request.candidates
+    ]
+    try:
+        semantic_scores = rerank_scores(request.question, passages)
+    except Exception:  # noqa: BLE001 - lexical fallback keeps the endpoint available.
+        semantic_scores = None
+    if semantic_scores is not None:
+        ranked = sorted(
+            (
+                chunk.model_copy(update={"score": semantic_score})
+                for chunk, semantic_score in zip(request.candidates, semantic_scores, strict=True)
+            ),
+            key=lambda chunk: chunk.score,
+            reverse=True,
+        )
+        return RerankResponse(evidence=ranked)
+
     question_terms = tokenize(request.question)
 
     def score(chunk: EvidenceChunk) -> float:

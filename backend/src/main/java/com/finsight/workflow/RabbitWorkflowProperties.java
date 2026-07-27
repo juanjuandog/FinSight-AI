@@ -7,8 +7,10 @@ public record RabbitWorkflowProperties(
         String exchange,
         String ingestionQueue,
         String ingestionRoutingKey,
+        String retryQueue,
+        String retryRoutingKey,
+        long retryDelayMs,
         String deadLetterExchange,
         String deadLetterQueue
 ) {
 }
-

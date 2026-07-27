@@ -101,6 +101,21 @@ public class JdbcStockAnalysisReportRepository implements StockAnalysisReportRep
         return count == null ? 0 : count;
     }
 
+    @Override
+    public int nextVersion(String companySymbol) {
+        Integer version = jdbcTemplate.queryForObject("""
+                INSERT INTO stock_analysis_report_versions(company_symbol, last_version)
+                VALUES (?, 1)
+                ON CONFLICT (company_symbol)
+                DO UPDATE SET last_version = stock_analysis_report_versions.last_version + 1
+                RETURNING last_version
+                """, Integer.class, companySymbol);
+        if (version == null) {
+            throw new IllegalStateException("Failed to allocate report version for " + companySymbol);
+        }
+        return version;
+    }
+
     private StockAnalysisReport mapReport(ResultSet rs, int rowNum) throws SQLException {
         return new StockAnalysisReport(
                 rs.getString("id"),

@@ -74,7 +74,12 @@ When quote data, metrics, risks, or evidence changes, the snapshot hash changes 
 
 ## Next Benchmarks
 
-- Add a Redis single-flight concurrency test that fires parallel report-generation requests and proves one owner wins the lease.
-- Add a workflow timeout recovery test with a deliberately stale `RUNNING` task.
-- Add p50/p95 timing for retrieval, AI fallback generation, report cache hit, and report cache miss.
+- Run `python scripts/benchmark_api.py --url <endpoint> --requests 100` to capture
+  min/mean/p50/p95/p99/max latency as reproducible JSON.
+- The Testcontainers suite fires 50 concurrent Redis lease acquisitions and asserts
+  that exactly one owner wins.
+- The repository tests prove stale workers and incorrect fencing tokens cannot
+  overwrite a recovered task.
+- The PostgreSQL integration test allocates 50 report versions concurrently and
+  asserts that every version is unique.
 - Track RAG evaluation trend history across commits.

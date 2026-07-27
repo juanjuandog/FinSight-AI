@@ -8,10 +8,18 @@ import com.finsight.domain.FinancialDataIngestionTemplate;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import jakarta.annotation.PreDestroy;
 
 @Service
 public class WorkflowOrchestrator {
@@ -22,8 +30,14 @@ public class WorkflowOrchestrator {
     private final CompanyIntelligenceService companyIntelligenceService;
     private final StockAiAnalysisService stockAiAnalysisService;
     private final WorkflowLeaseService leaseService;
+    private final ObjectProvider<WorkflowTaskPublisher> taskPublisher;
     private final MeterRegistry meterRegistry;
     private final Duration leaseTtl = Duration.ofMinutes(5);
+    private final ScheduledExecutorService leaseHeartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "workflow-lease-heartbeat");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public WorkflowOrchestrator(
             WorkflowTaskRepository taskRepository,
@@ -33,6 +47,7 @@ public class WorkflowOrchestrator {
             CompanyIntelligenceService companyIntelligenceService,
             StockAiAnalysisService stockAiAnalysisService,
             WorkflowLeaseService leaseService,
+            ObjectProvider<WorkflowTaskPublisher> taskPublisher,
             MeterRegistry meterRegistry
     ) {
         this.taskRepository = taskRepository;
@@ -42,6 +57,7 @@ public class WorkflowOrchestrator {
         this.companyIntelligenceService = companyIntelligenceService;
         this.stockAiAnalysisService = stockAiAnalysisService;
         this.leaseService = leaseService;
+        this.taskPublisher = taskPublisher;
         this.meterRegistry = meterRegistry;
     }
 
@@ -57,11 +73,51 @@ public class WorkflowOrchestrator {
             recordWorkflowMetric(task.taskType(), "lease_wait", Timer.start(meterRegistry));
             return;
         }
+        AtomicReference<WorkflowLease> activeLease = new AtomicReference<>(lease.get());
+        ScheduledFuture<?> heartbeat = startLeaseHeartbeat(task, activeLease);
         try {
-            executeWithLease(task, lease.get());
+            executeWithLease(task, activeLease.get());
         } finally {
-            leaseService.release(lease.get());
+            heartbeat.cancel(false);
+            leaseService.release(activeLease.get());
         }
+    }
+
+    private ScheduledFuture<?> startLeaseHeartbeat(
+            WorkflowTask task,
+            AtomicReference<WorkflowLease> activeLease
+    ) {
+        long intervalMillis = Math.max(1000, leaseTtl.toMillis() / 3);
+        return leaseHeartbeatExecutor.scheduleAtFixedRate(() -> {
+            try {
+                Optional<WorkflowLease> renewed = leaseService.renew(activeLease.get(), leaseTtl);
+                if (renewed.isPresent()) {
+                    activeLease.set(renewed.get());
+                    meterRegistry.counter(
+                            "finsight.workflow.lease.renewal.total",
+                            "taskType", task.taskType(),
+                            "result", "renewed"
+                    ).increment();
+                } else {
+                    meterRegistry.counter(
+                            "finsight.workflow.lease.renewal.total",
+                            "taskType", task.taskType(),
+                            "result", "ownership_lost"
+                    ).increment();
+                }
+            } catch (RuntimeException ex) {
+                meterRegistry.counter(
+                        "finsight.workflow.lease.renewal.total",
+                        "taskType", task.taskType(),
+                        "result", "failed"
+                ).increment();
+            }
+        }, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
+    }
+
+    @PreDestroy
+    void shutdownLeaseHeartbeatExecutor() {
+        leaseHeartbeatExecutor.shutdownNow();
     }
 
     private void executeWithLease(WorkflowTask task, WorkflowLease lease) {
@@ -81,33 +137,12 @@ public class WorkflowOrchestrator {
 
     private void executeIngestion(WorkflowTask task, WorkflowLease lease) {
         WorkflowTask runningTask = task.running(AgentWorkflowStage.INGESTING_DATA, lease);
-        taskRepository.save(runningTask);
+        if (taskRepository.saveIfOwned(runningTask, task.status(), task.fencingToken()).isEmpty()) {
+            return;
+        }
         dataSource.executeIngestionTask(runningTask);
         String companySymbol = stringPayload(task.payload(), "companySymbol");
-        WorkflowTask metricTask = createOrReuseTask(
-                WorkflowTaskType.FINANCIAL_METRIC_RECALCULATION,
-                "metric:" + companySymbol + ":" + task.id(),
-                Map.of("companySymbol", companySymbol, "parentTaskId", task.id())
-        );
-        WorkflowTask indexTask = createOrReuseTask(
-                WorkflowTaskType.DOCUMENT_INDEX_BUILD,
-                "index:" + companySymbol + ":" + task.id(),
-                Map.of("companySymbol", companySymbol, "parentTaskId", task.id())
-        );
-        WorkflowTask intelligenceTask = createOrReuseTask(
-                WorkflowTaskType.COMPANY_INTELLIGENCE_BUILD,
-                "intelligence:" + companySymbol + ":" + task.id(),
-                Map.of("companySymbol", companySymbol, "parentTaskId", task.id())
-        );
-        WorkflowTask aiAnalysisTask = createOrReuseTask(
-                WorkflowTaskType.STOCK_AI_ANALYSIS,
-                "stock-ai-analysis:" + companySymbol + ":" + task.id(),
-                Map.of("companySymbol", companySymbol, "parentTaskId", task.id())
-        );
-        execute(metricTask.id());
-        execute(indexTask.id());
-        execute(intelligenceTask.id());
-        execute(aiAnalysisTask.id());
+        publishNext(task, companySymbol);
     }
 
     private WorkflowTask createOrReuseTask(String taskType, String idempotencyKey, Map<String, Object> payload) {
@@ -118,15 +153,55 @@ public class WorkflowOrchestrator {
     private void executeTask(WorkflowTask task, WorkflowLease lease, AgentWorkflowStage stage, Runnable runnable) {
         WorkflowTask runningTask = task.running(stage, lease);
         Timer.Sample sample = Timer.start(meterRegistry);
+        if (taskRepository.saveIfOwned(runningTask, task.status(), task.fencingToken()).isEmpty()) {
+            recordWorkflowMetric(task.taskType(), "ownership_lost", sample);
+            return;
+        }
         try {
-            taskRepository.save(runningTask);
             runnable.run();
-            taskRepository.save(runningTask.succeeded());
-            recordWorkflowMetric(task.taskType(), "succeeded", sample);
+            boolean saved = taskRepository.saveIfOwned(
+                    runningTask.succeeded(),
+                    WorkflowStatus.RUNNING,
+                    lease.fencingToken()
+            ).isPresent();
+            recordWorkflowMetric(task.taskType(), saved ? "succeeded" : "ownership_lost", sample);
+            if (saved) {
+                publishNext(task, stringPayload(task.payload(), "companySymbol"));
+            }
         } catch (RuntimeException ex) {
-            taskRepository.save(runningTask.failed(ex.getMessage()));
-            recordWorkflowMetric(task.taskType(), "failed", sample);
+            boolean saved = taskRepository.saveIfOwned(
+                    runningTask.failed(ex.getMessage()),
+                    WorkflowStatus.RUNNING,
+                    lease.fencingToken()
+            ).isPresent();
+            recordWorkflowMetric(task.taskType(), saved ? "failed" : "ownership_lost", sample);
             throw ex;
+        }
+    }
+
+    private void publishNext(WorkflowTask completedTask, String companySymbol) {
+        String nextType = switch (completedTask.taskType()) {
+            case WorkflowTaskType.FINANCIAL_DATA_INGESTION -> WorkflowTaskType.FINANCIAL_METRIC_RECALCULATION;
+            case WorkflowTaskType.FINANCIAL_METRIC_RECALCULATION -> WorkflowTaskType.DOCUMENT_INDEX_BUILD;
+            case WorkflowTaskType.DOCUMENT_INDEX_BUILD -> WorkflowTaskType.COMPANY_INTELLIGENCE_BUILD;
+            case WorkflowTaskType.COMPANY_INTELLIGENCE_BUILD -> WorkflowTaskType.STOCK_AI_ANALYSIS;
+            default -> null;
+        };
+        if (nextType == null) {
+            return;
+        }
+        String rootTaskId = String.valueOf(completedTask.payload().getOrDefault("rootTaskId", completedTask.id()));
+        WorkflowTask next = createOrReuseTask(
+                nextType,
+                nextType + ":" + companySymbol + ":" + rootTaskId,
+                Map.of(
+                        "companySymbol", companySymbol,
+                        "parentTaskId", completedTask.id(),
+                        "rootTaskId", rootTaskId
+                )
+        );
+        if (next.status() == WorkflowStatus.CREATED || next.status() == WorkflowStatus.RETRYING) {
+            taskPublisher.getObject().publish(next);
         }
     }
 

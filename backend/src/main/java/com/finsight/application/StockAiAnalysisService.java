@@ -16,6 +16,8 @@ import com.finsight.market.ExchangeResolver;
 import com.finsight.market.MarketDataService;
 import com.finsight.market.MarketQuote;
 import com.finsight.rag.EvidenceRetriever;
+import com.finsight.workflow.WorkflowLease;
+import com.finsight.workflow.WorkflowLeaseService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -49,6 +51,7 @@ public class StockAiAnalysisService {
     private final ObjectMapper objectMapper;
     private final WebClient webClient;
     private final Duration analysisCacheTtl;
+    private final WorkflowLeaseService leaseService;
 
     public StockAiAnalysisService(
             CompanyRepository companyRepository,
@@ -62,6 +65,7 @@ public class StockAiAnalysisService {
             StockAnalysisCache analysisCache,
             ObjectMapper objectMapper,
             WebClient.Builder builder,
+            WorkflowLeaseService leaseService,
             @Value("${finsight.ai-service-url:http://localhost:8001}") String aiServiceUrl,
             @Value("${finsight.cache.analysis-ttl:PT6H}") Duration analysisCacheTtl
     ) {
@@ -76,6 +80,7 @@ public class StockAiAnalysisService {
         this.analysisCache = analysisCache;
         this.objectMapper = objectMapper;
         this.webClient = builder.baseUrl(trimTrailingSlash(aiServiceUrl)).build();
+        this.leaseService = leaseService;
         this.analysisCacheTtl = analysisCacheTtl;
     }
 
@@ -118,6 +123,35 @@ public class StockAiAnalysisService {
             return latest.get();
         }
 
+        String leaseKey = "stock-analysis:" + cacheKey;
+        Optional<WorkflowLease> lease = leaseService.tryAcquire(leaseKey, Duration.ofSeconds(90));
+        if (lease.isEmpty()) {
+            return awaitConcurrentResult(cacheKey, normalized, contextHash);
+        }
+        try {
+            Optional<StockAiAnalysisResponse> secondCheck = analysisCache.get(cacheKey)
+                    .or(() -> reportRepository.findLatest(normalized)
+                            .filter(report -> report.contextHash().equals(contextHash))
+                            .map(this::fromReport))
+                    .map(StockAiAnalysisResponse::withCacheHit);
+            if (secondCheck.isPresent()) {
+                return secondCheck.get();
+            }
+            StockAiAnalysisResponse response = callAiOrFallback(request, company, quote, metrics, risks, evidence);
+            return persistAndCache(normalized, contextHash, dataSnapshotHash, cacheKey, response);
+        } finally {
+            leaseService.release(lease.get());
+        }
+    }
+
+    private StockAiAnalysisResponse callAiOrFallback(
+            StockAiAnalysisRequest request,
+            Company company,
+            MarketQuote quote,
+            List<FinancialMetric> metrics,
+            List<RiskSignal> risks,
+            List<EvidencePayload> evidence
+    ) {
         StockAiAnalysisResponse response = null;
         try {
             response = webClient.post()
@@ -129,10 +163,34 @@ public class StockAiAnalysisService {
         } catch (RuntimeException ignored) {
             // Keep the UI usable when the local Ollama sidecar is not running.
         }
-        if (response == null || response.summary() == null || response.summary().isBlank()) {
-            response = fallback(company, quote, metrics, risks, evidence);
+        return response == null || response.summary() == null || response.summary().isBlank()
+                ? fallback(company, quote, metrics, risks, evidence)
+                : response;
+    }
+
+    private StockAiAnalysisResponse awaitConcurrentResult(
+            String cacheKey,
+            String symbol,
+            String contextHash
+    ) {
+        Instant deadline = Instant.now().plusSeconds(10);
+        while (Instant.now().isBefore(deadline)) {
+            Optional<StockAiAnalysisResponse> completed = analysisCache.get(cacheKey)
+                    .or(() -> reportRepository.findLatest(symbol)
+                            .filter(report -> report.contextHash().equals(contextHash))
+                            .map(this::fromReport))
+                    .map(StockAiAnalysisResponse::withCacheHit);
+            if (completed.isPresent()) {
+                return completed.get();
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for stock analysis", ex);
+            }
         }
-        return persistAndCache(normalized, contextHash, dataSnapshotHash, cacheKey, response);
+        throw new IllegalStateException("Stock analysis is already running for " + symbol);
     }
 
     public Optional<StockAiAnalysisResponse> latest(String symbol) {
@@ -204,7 +262,7 @@ public class StockAiAnalysisService {
     ) {
         Instant generatedAt = Instant.now();
         String reportId = UUID.randomUUID().toString();
-        int reportVersion = (int) reportRepository.countByCompanySymbol(symbol) + 1;
+        int reportVersion = reportRepository.nextVersion(symbol);
         StockAiAnalysisResponse enriched = response.withPersistence(
                 reportId,
                 generatedAt,

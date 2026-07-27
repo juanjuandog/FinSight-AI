@@ -65,7 +65,9 @@ public abstract class FinancialDataIngestionTemplate implements FinancialDataSou
                 ? task.atStage(AgentWorkflowStage.INGESTING_DATA)
                 : task.running();
         try {
-            taskRepository.save(runningTask);
+            if (taskRepository.saveIfOwned(runningTask, task.status(), task.fencingToken()).isEmpty()) {
+                throw new IllegalStateException("Workflow task ownership was lost before ingestion: " + task.id());
+            }
             List<Company> companies = fetchCompanies();
             companies.forEach(companyRepository::save);
             if (companies.stream().noneMatch(company -> company.symbol().equals(companySymbol))
@@ -76,10 +78,18 @@ public abstract class FinancialDataIngestionTemplate implements FinancialDataSou
             documents.stream().filter(this::isValidDocument).forEach(documentRepository::save);
             List<FinancialStatement> statements = fetchStatements(companySymbol);
             statements.forEach(statementRepository::save);
-            taskRepository.save(runningTask.succeeded());
+            taskRepository.saveIfOwned(
+                    runningTask.succeeded(),
+                    WorkflowStatus.RUNNING,
+                    runningTask.fencingToken()
+            );
             return new IngestionResult(sourceName(), companySymbol, documents.size(), statements.size(), false);
         } catch (RuntimeException ex) {
-            taskRepository.save(runningTask.failed(ex.getMessage()));
+            taskRepository.saveIfOwned(
+                    runningTask.failed(ex.getMessage()),
+                    WorkflowStatus.RUNNING,
+                    runningTask.fencingToken()
+            );
             throw ex;
         }
     }

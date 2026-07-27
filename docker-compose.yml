@@ -41,6 +41,11 @@ services:
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      AI_LOCAL_MODELS_ENABLED: ${AI_LOCAL_MODELS_ENABLED:-true}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      RERANK_MODEL: ${RERANK_MODEL:-BAAI/bge-reranker-base}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-32}
+      RERANK_BATCH_SIZE: ${RERANK_BATCH_SIZE:-16}
     ports:
       - "8001:8001"
     healthcheck:

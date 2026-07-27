@@ -44,9 +44,13 @@ finsight:
   embedding:
     dimension: 384
   workflow:
+    allow-local-lease-fallback: true
     exchange: finsight.workflow.exchange
     ingestion-queue: finsight.workflow.ingestion
     ingestion-routing-key: workflow.ingestion
+    retry-queue: finsight.workflow.retry
+    retry-routing-key: workflow.retry
+    retry-delay-ms: 5000
     dead-letter-exchange: finsight.workflow.dlx
     dead-letter-queue: finsight.workflow.dead-letter
     running-timeout: PT10M

@@ -12,6 +12,7 @@ import java.util.Map;
 
 @Component
 public class HybridRetrievalGateway {
+    private static final double RRF_K = 60.0;
     private final DocumentChunkRepository chunkRepository;
     private final EmbeddingService embeddingService;
 
@@ -21,31 +22,44 @@ public class HybridRetrievalGateway {
     }
 
     public List<RetrievalHit> search(String companySymbol, String question, int limit) {
-        List<RetrievalHit> hits = new ArrayList<>();
+        Map<String, FusionCandidate> candidates = new LinkedHashMap<>();
         List<DocumentChunk> keywordChunks = chunkRepository.keywordSearch(companySymbol, question, limit);
         for (int i = 0; i < keywordChunks.size(); i++) {
-            hits.add(new RetrievalHit(keywordChunks.get(i), 1.0 - i * 0.04, "keyword"));
+            addRank(candidates, keywordChunks.get(i), "keyword", i + 1);
         }
 
         List<Double> queryEmbedding = embeddingService.embed(question);
         List<DocumentChunk> vectorChunks = chunkRepository.vectorSearch(companySymbol, queryEmbedding, limit);
         for (int i = 0; i < vectorChunks.size(); i++) {
-            hits.add(new RetrievalHit(vectorChunks.get(i), 0.86 - i * 0.03, "vector"));
+            addRank(candidates, vectorChunks.get(i), "vector", i + 1);
         }
 
-        Map<String, RetrievalHit> merged = new LinkedHashMap<>();
-        for (RetrievalHit hit : hits) {
-            merged.merge(hit.chunk().id(), hit, (left, right) -> new RetrievalHit(
-                    left.chunk(),
-                    Math.max(left.score(), right.score()) + 0.08,
-                    left.channel().equals(right.channel()) ? left.channel() : left.channel() + "+" + right.channel()
-            ));
-        }
-
-        return merged.values().stream()
+        return candidates.values().stream()
+                .map(candidate -> new RetrievalHit(
+                        candidate.chunk(),
+                        candidate.ranks().values().stream()
+                                .mapToDouble(rank -> 1.0 / (RRF_K + rank))
+                                .sum(),
+                        String.join("+", candidate.ranks().keySet()),
+                        Map.copyOf(candidate.ranks())
+                ))
                 .sorted(Comparator.comparingDouble(RetrievalHit::score).reversed())
                 .limit(limit)
                 .toList();
     }
-}
 
+    private void addRank(
+            Map<String, FusionCandidate> candidates,
+            DocumentChunk chunk,
+            String channel,
+            int rank
+    ) {
+        candidates.computeIfAbsent(
+                chunk.id(),
+                ignored -> new FusionCandidate(chunk, new LinkedHashMap<>())
+        ).ranks().put(channel, rank);
+    }
+
+    private record FusionCandidate(DocumentChunk chunk, Map<String, Integer> ranks) {
+    }
+}

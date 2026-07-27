@@ -24,6 +24,21 @@ public class InMemoryWorkflowTaskRepository implements WorkflowTaskRepository {
     }
 
     @Override
+    public Optional<WorkflowTask> saveIfOwned(
+            WorkflowTask task,
+            WorkflowStatus expectedStatus,
+            Long expectedFencingToken
+    ) {
+        WorkflowTask updated = tasks.computeIfPresent(task.id(), (ignored, current) ->
+                current.status() == expectedStatus
+                        && java.util.Objects.equals(current.fencingToken(), expectedFencingToken)
+                        ? task
+                        : current
+        );
+        return task.equals(updated) ? Optional.of(task) : Optional.empty();
+    }
+
+    @Override
     public synchronized WorkflowTask createIfAbsent(WorkflowTask task) {
         return findByIdempotencyKey(task.idempotencyKey())
                 .orElseGet(() -> save(task));

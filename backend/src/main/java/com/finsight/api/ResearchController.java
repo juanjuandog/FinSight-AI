@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/research")
@@ -82,7 +83,7 @@ public class ResearchController {
                 ? symbol + " 投资价值 财务质量 风险"
                 : report.summary();
         List<EvidenceTraceItem> evidence = retrievalGateway.search(symbol, query, Math.min(Math.max(limit, 1), 12)).stream()
-                .map(hit -> traceItem(hit.chunk(), hit.channel(), hit.score()))
+                .map(hit -> traceItem(hit.chunk(), hit.channel(), hit.score(), hit.ranks()))
                 .toList();
         return new ResearchReportTrace(
                 report.reportId(),
@@ -117,14 +118,20 @@ public class ResearchController {
         );
     }
 
-    private EvidenceTraceItem traceItem(DocumentChunk chunk, String channel, double score) {
+    private EvidenceTraceItem traceItem(
+            DocumentChunk chunk,
+            String channel,
+            double score,
+            Map<String, Integer> ranks
+    ) {
         return new EvidenceTraceItem(
                 chunk.documentId(),
                 chunk.title(),
                 chunk.section(),
                 channel,
                 chunk.text(),
-                score
+                score,
+                ranks
         );
     }
 
@@ -168,7 +175,8 @@ public class ResearchController {
             String section,
             String channel,
             String text,
-            double score
+            double score,
+            Map<String, Integer> ranks
     ) {
     }
 }

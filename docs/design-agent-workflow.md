@@ -58,11 +58,17 @@ Doing this in Lua keeps acquisition atomic. This avoids duplicate AI analysis, d
 
 ## Fencing Token
 
-The fencing token is a monotonically increasing value associated with the lease owner. It gives operational traces a way to identify stale owners and reason about task ownership. In future versions it can be extended into compare-and-set protection for downstream writes.
+The fencing token is a monotonically increasing value associated with the lease
+owner. Workflow state transitions use status + fencing token compare-and-set
+updates, so a stale worker cannot overwrite a timeout recovery or a newer owner.
+The lease is renewed periodically with an owner/token-checked Lua script.
 
 ## Local Fallback
 
-Local development should not require Redis. When Redis is unavailable, the lease service falls back to a process-local single-flight map. This preserves developer experience while keeping the production path Redis-backed.
+Local development should not require Redis. When Redis is unavailable, the lease
+service can fall back to a process-local single-flight map. Production disables
+that fallback and fails closed so a Redis outage cannot silently remove
+cross-instance exclusion.
 
 ## Timeout Recovery
 

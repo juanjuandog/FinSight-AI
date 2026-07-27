@@ -8,12 +8,15 @@ import org.springframework.stereotype.Repository;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Repository
 @Profile("!postgres")
 public class InMemoryStockAnalysisReportRepository implements StockAnalysisReportRepository {
     private final CopyOnWriteArrayList<StockAnalysisReport> reports = new CopyOnWriteArrayList<>();
+    private final ConcurrentHashMap<String, AtomicInteger> versions = new ConcurrentHashMap<>();
 
     @Override
     public StockAnalysisReport save(StockAnalysisReport report) {
@@ -43,5 +46,10 @@ public class InMemoryStockAnalysisReportRepository implements StockAnalysisRepor
         return reports.stream()
                 .filter(report -> report.companySymbol().equals(companySymbol))
                 .count();
+    }
+
+    @Override
+    public int nextVersion(String companySymbol) {
+        return versions.computeIfAbsent(companySymbol, ignored -> new AtomicInteger()).incrementAndGet();
     }
 }

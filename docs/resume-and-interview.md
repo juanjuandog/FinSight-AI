@@ -12,11 +12,11 @@ FinSight is an AI equity research agent platform with resilient workflow orchest
 `Java`, `Spring Boot`, `PostgreSQL`, `pgvector`, `Redis`, `RabbitMQ`, `RAG`, `AI Agent`
 
 - 设计并实现面向 A 股投研场景的 AI Agent 后端平台，串联数据采集、财报解析、指标计算、文档索引、公司画像建模、RAG 问答和 AI 研报生成。
-- 基于 RabbitMQ 构建异步投研工作流，将数据采集、指标重算、文档索引、公司画像构建、AI 分析拆分为可恢复任务链路，支持任务状态追踪、失败重试、Dead Letter 和超时接管。
+- 基于 RabbitMQ 构建消息驱动投研工作流，将数据采集、指标重算、文档索引、公司画像和 AI 分析拆分为逐阶段发布的 `WorkflowTask`，通过 publisher confirm、失败重试、Dead Letter 和超时恢复治理长任务。
 - 设计 Agent 工作流状态机，记录任务阶段、执行状态、失败原因、重试次数、更新时间、lease owner 和 fencing token，提升长链路任务可观测性和恢复能力。
-- 基于 Redis Lua、Single-flight Lease、幂等 Key 和 Fencing Token 实现多实例环境下的任务去重、AI 调用防放大和缓存击穿保护。
+- 基于 Redis Lua、可续租 Single-flight Lease、幂等 Key 和 Fencing Token CAS 实现多实例任务去重、AI 调用防放大与缓存击穿保护；生产环境 Redis 故障采用 fail-closed。
 - 设计可信 AI 报告缓存体系，基于 `dataSnapshotHash`、`contextHash` 和 `reportVersion` 管理 AI 研报缓存、历史版本和数据快照，避免底层行情、指标或证据变化后复用过期结论。
-- 基于 PostgreSQL/pgvector 实现金融文档混合检索，支持关键词检索、向量召回、证据去重、引用追踪和 RAG 问答溯源。
+- 基于 PostgreSQL/pgvector 实现金融文档混合检索，使用 RRF 融合关键词与向量召回，并记录各通道 rank、融合分数和引用证据。
 - 构建投研 Agent 评测体系，覆盖 RAG 命中率、证据覆盖率、幻觉风险、结论一致性、置信度校准和响应延迟，用于回归验证 AI 输出质量。
 
 ## Strong Interview Summary
@@ -53,5 +53,5 @@ Financial AI output needs evidence and consistency. The evaluation layer gives t
 
 - Add persisted workflow transition history.
 - Add dashboard screenshots and hosted demo data.
-- Add integration tests for Redis single-flight and timeout recovery.
+- 扩大 RAG 评测集并持续记录跨提交趋势。
 - Add PR-ready benchmark results for RAG evaluation cases.

@@ -34,3 +34,6 @@ jobs:
 
       - name: Check shell scripts
         run: bash -n scripts/*.sh
+
+      - name: Check Python service syntax
+        run: python -m py_compile ai-service/app/main.py ai-service/app/model_runtime.py scripts/benchmark_api.py

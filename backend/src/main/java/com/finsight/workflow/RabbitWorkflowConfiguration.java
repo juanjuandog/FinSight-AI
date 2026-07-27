@@ -45,6 +45,15 @@ public class RabbitWorkflowConfiguration {
     }
 
     @Bean
+    public Queue workflowRetryQueue(RabbitWorkflowProperties properties) {
+        return new Queue(properties.retryQueue(), true, false, false, Map.of(
+                "x-message-ttl", properties.retryDelayMs(),
+                "x-dead-letter-exchange", properties.exchange(),
+                "x-dead-letter-routing-key", properties.ingestionRoutingKey()
+        ));
+    }
+
+    @Bean
     public Binding ingestionBinding(Queue ingestionQueue, DirectExchange workflowExchange, RabbitWorkflowProperties properties) {
         return BindingBuilder.bind(ingestionQueue).to(workflowExchange).with(properties.ingestionRoutingKey());
     }
@@ -59,6 +68,17 @@ public class RabbitWorkflowConfiguration {
     }
 
     @Bean
+    public Binding retryBinding(
+            Queue workflowRetryQueue,
+            DirectExchange workflowExchange,
+            RabbitWorkflowProperties properties
+    ) {
+        return BindingBuilder.bind(workflowRetryQueue)
+                .to(workflowExchange)
+                .with(properties.retryRoutingKey());
+    }
+
+    @Bean
     public MessageConverter workflowMessageConverter() {
         return new Jackson2JsonMessageConverter();
     }
@@ -67,6 +87,7 @@ public class RabbitWorkflowConfiguration {
     public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory, MessageConverter workflowMessageConverter) {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(workflowMessageConverter);
+        template.setMandatory(true);
         return template;
     }
 

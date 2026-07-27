@@ -13,4 +13,6 @@ public interface StockAnalysisReportRepository {
     List<StockAnalysisReport> findByCompanySymbol(String companySymbol, int limit);
 
     long countByCompanySymbol(String companySymbol);
+
+    int nextVersion(String companySymbol);
 }

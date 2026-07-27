@@ -62,6 +62,45 @@ public class JdbcWorkflowTaskRepository implements WorkflowTaskRepository {
     }
 
     @Override
+    public Optional<WorkflowTask> saveIfOwned(
+            WorkflowTask task,
+            WorkflowStatus expectedStatus,
+            Long expectedFencingToken
+    ) {
+        int updated = jdbcTemplate.update("""
+                UPDATE workflow_tasks
+                SET task_type = ?,
+                    idempotency_key = ?,
+                    status = ?,
+                    stage = ?,
+                    attempts = ?,
+                    updated_at = ?,
+                    payload = ?,
+                    error_message = ?,
+                    lease_owner = ?,
+                    fencing_token = ?
+                WHERE id = ?
+                  AND status = ?
+                  AND fencing_token IS NOT DISTINCT FROM ?
+                """,
+                task.taskType(),
+                task.idempotencyKey(),
+                task.status().name(),
+                task.stage().name(),
+                task.attempts(),
+                Timestamp.from(task.updatedAt()),
+                jsonColumnMapper.jsonb(task.payload()),
+                task.errorMessage(),
+                task.leaseOwner(),
+                task.fencingToken(),
+                task.id(),
+                expectedStatus.name(),
+                expectedFencingToken
+        );
+        return updated == 1 ? Optional.of(task) : Optional.empty();
+    }
+
+    @Override
     public WorkflowTask createIfAbsent(WorkflowTask task) {
         try {
             return save(task);

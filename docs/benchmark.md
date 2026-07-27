@@ -46,6 +46,7 @@ FinSight currently scores each evaluation case with:
 - `hallucinationRisk`: heuristic penalty for unsupported or overconfident claims.
 - `conclusionConsistency`: whether risk and positive conclusions are expressed coherently.
 - `confidenceCalibration`: whether confidence follows grounding quality.
+- `dataSnapshotHash`: stable digest of the ordered evidence passed to answer generation.
 - `latencyMillis`: response latency captured in the RAG trace.
 
 The goal is not to claim perfect financial reasoning. The goal is to create a regression loop for evidence-grounded AI output.

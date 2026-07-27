@@ -10,6 +10,7 @@ public record RagTrace(
         Map<String, Object> structuredQuery,
         List<String> retrievalChannels,
         int evidenceCount,
+        String dataSnapshotHash,
         long latencyMillis
 ) {
 }

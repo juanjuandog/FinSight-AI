@@ -7,6 +7,7 @@ import com.finsight.domain.model.EvidenceChunk;
 import com.finsight.domain.model.RagTrace;
 import com.finsight.domain.repository.RagTraceRepository;
 import com.finsight.rag.EvidenceRetriever;
+import com.finsight.rag.EvidenceSnapshotHasher;
 import com.finsight.rag.QueryUnderstandingService;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -56,6 +57,7 @@ public class AnalysisApplicationService {
                 structuredQuery,
                 List.of("keyword-search", "metric-store", "risk-store", "rerank"),
                 evidence.size(),
+                EvidenceSnapshotHasher.hash(evidence),
                 Duration.between(startedAt, Instant.now()).toMillis()
         );
         ragTraceRepository.save(command.companySymbol(), command.question(), trace);

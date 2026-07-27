@@ -22,9 +22,9 @@ public class JdbcRagTraceRepository implements RagTraceRepository {
         jdbcTemplate.update("""
                 INSERT INTO rag_traces(
                     trace_id, company_symbol, question, structured_query, retrieval_channels,
-                    evidence_count, latency_millis, model_name, prompt_version, token_cost
+                    evidence_count, data_snapshot_hash, latency_millis, model_name, prompt_version, token_cost
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (trace_id) DO NOTHING
                 """,
                 trace.traceId(),
@@ -33,6 +33,7 @@ public class JdbcRagTraceRepository implements RagTraceRepository {
                 jsonColumnMapper.jsonb(trace.structuredQuery()),
                 jsonColumnMapper.jsonb(trace.retrievalChannels()),
                 trace.evidenceCount(),
+                trace.dataSnapshotHash(),
                 trace.latencyMillis(),
                 "fallback-local",
                 "rag-v1",

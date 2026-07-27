@@ -64,6 +64,9 @@ Trace fields:
 ## Lower-Level APIs
 
 - `GET /api/workflows/summary`: workflow counts and stage distribution.
+- `POST /api/analysis/ask`: source-grounded answer with evidence and a RAG trace.
+  The trace includes `dataSnapshotHash`, a stable SHA-256 digest of the ordered
+  model-facing evidence, so runs can verify that they used the same retrieved context.
 - `POST /api/evaluations/rag/run`: RAG quality evaluation.
 - `GET /api/document-index/{symbol}/search?q=...`: direct evidence search.
 - `GET /api/companies/{symbol}/analysis-status`: data readiness and latest workflow status.

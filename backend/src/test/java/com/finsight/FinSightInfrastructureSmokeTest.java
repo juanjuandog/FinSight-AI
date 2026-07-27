@@ -44,7 +44,8 @@ class FinSightInfrastructureSmokeTest {
 
     @Container
     static RabbitMQContainer rabbitmq = new RabbitMQContainer("rabbitmq:3-management")
-            .withUser("finsight", "finsight");
+            .withUser("finsight", "finsight")
+            .withPermission("/", "finsight", ".*", ".*", ".*");
 
     @Container
     static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine")
@@ -71,8 +72,9 @@ class FinSightInfrastructureSmokeTest {
         registry.add("spring.rabbitmq.port", rabbitmq::getAmqpPort);
         registry.add("spring.rabbitmq.username", () -> "finsight");
         registry.add("spring.rabbitmq.password", () -> "finsight");
-        registry.add("spring.data.redis.host", redis::getHost);
-        registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+        registry.add("spring.data.redis.url", () ->
+                "redis://" + redis.getHost() + ":" + redis.getFirstMappedPort()
+        );
     }
 
     @Test

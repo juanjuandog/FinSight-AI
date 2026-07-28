@@ -42,7 +42,20 @@ public class DocumentIndexController {
             @RequestParam String q,
             @RequestParam(defaultValue = "5") int limit
     ) {
-        return retrievalGateway.search(companySymbol, q, limit).stream()
+        return searchEvidence(companySymbol, q, limit);
+    }
+
+    @GetMapping("/search")
+    public List<EvidenceChunk> searchAll(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "5") int limit
+    ) {
+        return searchEvidence(null, q, limit);
+    }
+
+    private List<EvidenceChunk> searchEvidence(String companySymbol, String query, int limit) {
+        int boundedLimit = Math.min(Math.max(limit, 1), 12);
+        return retrievalGateway.search(companySymbol, query, boundedLimit).stream()
                 .map(hit -> new EvidenceChunk(
                         hit.chunk().documentId(),
                         hit.chunk().title(),
@@ -58,4 +71,3 @@ public class DocumentIndexController {
     public record ChunkCount(String companySymbol, long count) {
     }
 }
-

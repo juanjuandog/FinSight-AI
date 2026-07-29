@@ -1,456 +1,180 @@
-# FinSight AI
+<p align="center">
+  <img src="backend/src/main/resources/static/brand-favicon.svg" width="72" alt="FinSight AI 标志">
+</p>
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+<h1 align="center">FinSight AI</h1>
 
-![CI](https://github.com/juanjuandog/FinSight-AI/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Java](https://img.shields.io/badge/Java-17-blue)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-green)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-blue)
-![Redis](https://img.shields.io/badge/Redis-single--flight-red)
-![RabbitMQ](https://img.shields.io/badge/RabbitMQ-workflows-orange)
+<p align="center">
+  <strong>证据驱动的股票投研系统：可恢复工作流、快照绑定报告与混合 RAG。</strong>
+</p>
 
-FinSight 是一个面向股票投研场景的开源 AI Agent 后端平台，核心能力包括：证据驱动的 AI 研报、可恢复 Agent 工作流、Redis Lua Single-flight 并发控制、PostgreSQL/pgvector 混合检索、报告版本化缓存和 RAG 评测。
+<p align="center">
+  将行情、财务指标、公告与公司事件整理成结构化、可核验、可复现的 AI 投研结论。
+</p>
 
-这个项目不是简单的“调大模型接口” Demo，而是重点展示 AI Agent 背后的后端工程能力：长链路任务治理、幂等调度、失败恢复、可信缓存、证据追踪和输出质量评测。
+<p align="center">
+  <a href="https://github.com/juanjuandog/FinSight-AI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/juanjuandog/FinSight-AI/ci.yml?branch=master&amp;style=flat-square&amp;label=CI&amp;color=8A7350" alt="CI 状态"></a>
+  <img src="https://img.shields.io/badge/Java-17-4B5563?style=flat-square&amp;logo=openjdk&amp;logoColor=white" alt="Java 17">
+  <img src="https://img.shields.io/badge/Spring_Boot-3.3.5-6B7280?style=flat-square&amp;logo=springboot&amp;logoColor=white" alt="Spring Boot 3.3.5">
+  <img src="https://img.shields.io/badge/PostgreSQL-pgvector-8A7350?style=flat-square&amp;logo=postgresql&amp;logoColor=white" alt="PostgreSQL 和 pgvector">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-4B5563?style=flat-square" alt="MIT License"></a>
+</p>
 
-## 前端产品展示
+<p align="center">
+  <a href="README.md">English</a>
+  · <a href="docs/architecture.md">系统架构</a>
+  · <a href="docs/api.md">API</a>
+  · <a href="#快速开始">快速开始</a>
+</p>
 
-FinSight 自带一个可运行的机构投研控制台。这个前端不是简单装饰页，而是把后端生成的投研工作流、报告缓存、证据链、RAG 评测和财务风险信号都展示出来。
+![FinSight AI 公司研究工作区](docs/readme-product-overview.png)
 
-### 投研工作台
+FinSight AI 是一个面向 A 股的开源投研工作台，也是可靠 AI Agent 的后端工程实践。它不止调用一次模型：长链路研究任务可以恢复，重复执行受到控制，报告与数据快照绑定，生成结论保留可检查的证据路径。
 
-![FinSight 投研工作台](docs/readme-ui-overview.png)
+> FinSight 是研究辅助工具，不是自动交易系统，其输出不构成投资建议。
 
-- 支持输入股票代码，集中查看行情状态、价格走势、均线、成交量和 AI 投研结论。
-- 行情历史优先使用真实市场 K 线，离线或接口不可用时使用确定性 fallback 数据，方便面试和本地演示。
-- AI Brief 会输出评级、置信度、核心理由和风险点，而不是只返回一段不可追踪的聊天文本。
+## 专注的投研工作区
 
-### Agent 工作流与可信报告
+界面将不同研究活动拆分为独立工作区，不再把内部诊断信息和用户功能堆在同一个 Dashboard。
 
-![FinSight Agent 工作流和报告追踪](docs/readme-ui-workflow-trace.png)
-
-- 页面直接展示 Research Task 状态机：创建、采集、指标计算、索引、画像、研报生成和完成。
-- 每个任务暴露幂等 key、attempts、lease owner、fencing token 等字段，让并发控制和任务治理能力可以被看见。
-- Report Trace 展示 `reportVersion`、`dataSnapshotHash`、缓存命中、模型来源、生成时间，以及与报告结论绑定的证据 chunk。
-
-### 指标、风险与证据链
-
-![FinSight 指标和证据链工作区](docs/readme-ui-evidence-quality.png)
-
-- 将财务指标沉淀成投研视角的健康卡片，包括盈利能力、成长能力、现金流质量和资产负债率。
-- 证据检索会返回来自公告、财报和结构化财务摘要的可追溯片段。
-- 同一套证据层支撑 RAG 回答、报告引用、幻觉风险检测和评测回归用例。
-
-## 为什么做这个项目
-
-很多 RAG 项目停留在“检索几段文本，然后问 LLM”。FinSight 更关注一个 AI 投研系统真正落地时需要解决的问题：
-
-- 长时间运行的 Agent 工作流需要明确状态机；
-- 多实例环境下不能重复执行昂贵任务；
-- AI 调用需要 Single-flight，避免请求放大和缓存击穿；
-- AI 报告不能只按 prompt 缓存，而要绑定数据快照；
-- RAG 回答必须能追踪证据来源；
-- AI 输出质量需要可回归评测，而不是只靠主观感觉。
-
-## 核心亮点
-
-| 模块 | 实现内容 |
+| 工作区 | 用途 |
 | --- | --- |
-| Agent 工作流 | 将数据采集、指标重算、文档索引、公司画像、AI 研报生成拆成可恢复阶段 |
-| 并发控制 | 幂等 key、repository 层 `createIfAbsent`、Redis Lua single-flight lease、fencing token、本地降级锁 |
-| 失败恢复 | 任务状态机、阶段追踪、重试、Dead Letter、超时接管调度器 |
-| 可信 AI 缓存 | `contextHash`、`dataSnapshotHash`、`reportVersion`，支持 Redis/PostgreSQL 缓存复用 |
-| 检索链路 | PostgreSQL JSONB、全文检索、pgvector、混合召回、证据去重 |
-| 评测体系 | RAG 命中率、证据覆盖率、答案覆盖率、幻觉风险、结论一致性、置信度校准、延迟 |
-| Demo 展示 | Spring Boot API、静态 Dashboard、样例数据流、Actuator、Prometheus 指标 |
+| 公司研究 | 搜索 A 股公司，查看行情、历史收盘价折线图和关键财务指标 |
+| AI 分析 | 生成包含置信度、支持因素和风险因素的结构化结论 |
+| 证据来源 | 从财报、公告和结构化指标中检索可核验的原始依据 |
+| 近期事件 | 沿时间线查看公开披露、指标变化和风险信号 |
+| 关注列表 | 保存需要持续研究的公司，并快速返回公司工作区 |
 
-## 架构
+## FinSight 有什么不同
 
-```mermaid
-flowchart LR
-    UI["Dashboard / REST API"] --> Backend["Spring Boot Backend"]
-    Backend --> Workflow["Agent Workflow Orchestrator"]
-    Workflow --> MQ["RabbitMQ Async Queue"]
-    Workflow --> Redis["Redis Lua Lease + Cache"]
-    Workflow --> PG["PostgreSQL + pgvector"]
-    Backend --> AI["FastAPI AI Service / Ollama fallback"]
-    PG --> Retrieval["Hybrid Retrieval + Evidence"]
-    Retrieval --> Backend
-    AI --> Report["Versioned AI Report"]
-    Report --> PG
-    Backend --> Eval["RAG / Agent Evaluation"]
-```
+| 工程问题 | FinSight 的处理方式 | 关键实现 |
+| --- | --- | --- |
+| AI 长任务可能在中途失败 | 可恢复阶段、显式任务状态、重试、超时接管与死信处理 | [`WorkflowOrchestrator`](backend/src/main/java/com/finsight/workflow/WorkflowOrchestrator.java) |
+| 相同请求放大昂贵计算 | 幂等键、Redis Lua Single-flight Lease 与 Fencing Token | [`RedisBackedWorkflowLeaseService`](backend/src/main/java/com/finsight/workflow/RedisBackedWorkflowLeaseService.java) |
+| 数据变化后缓存报告已经过期 | 使用 `dataSnapshotHash`、`contextHash` 和 `reportVersion` 绑定来源状态 | [`StockAiAnalysisService`](backend/src/main/java/com/finsight/application/StockAiAnalysisService.java) |
+| RAG 结论难以验证 | 全文与向量召回、RRF、Rerank、Evidence Trace 和回归评测 | [`HybridRetrievalGateway`](backend/src/main/java/com/finsight/rag/HybridRetrievalGateway.java) |
+| 模型基础设施需要独立演进 | Embedding、Rerank 和生成封装为 FastAPI Sidecar，并保留确定性降级 | [`ai-service`](ai-service/app/main.py) |
 
-更多设计细节见：[Architecture Notes](docs/architecture.md)
+## 从问题到证据
 
-## 文档
+1. 研究请求首先创建一个幂等任务。
+2. RabbitMQ 调度数据采集、指标计算、文档索引、公司画像和报告生成。
+3. Redis 协调重复任务，PostgreSQL/pgvector 保存数据快照、向量、证据与报告。
+4. 混合检索选出并重排证据，再交给 AI Sidecar。
+5. 最终报告保留版本、快照哈希、模型来源和证据轨迹。
 
-- [Architecture Notes](docs/architecture.md)
-- [Research API](docs/api.md)
-- [Agent Workflow Design](docs/design-agent-workflow.md)
-- [Benchmark And Evaluation Notes](docs/benchmark.md)
-- [Resume And Interview Notes](docs/resume-and-interview.md)
-- [GitHub Presentation Snippets](docs/github-profile.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Roadmap](ROADMAP.md)
-- [Contributing](CONTRIBUTING.md)
+![FinSight AI 证据检索工作区](docs/readme-evidence-workspace.png)
 
 ## 快速开始
 
-### 0. 前置依赖
+### 轻量预览
+
+适合快速查看产品和核心流程。只需要 Java 17 与 Maven，默认使用本地内存适配器，不依赖外部基础设施。
 
 ```bash
-docker --version
-docker compose version
+git clone https://github.com/juanjuandog/FinSight-AI.git
+cd FinSight-AI/backend
+mvn spring-boot:run
 ```
 
-- Docker Engine 和 Docker Compose v2，例如 Docker Desktop、OrbStack、Colima 或 Linux Docker daemon。
-- 完整栈会同时运行 Elasticsearch、PostgreSQL、RabbitMQ、Redis、MinIO、Spring Boot backend 和 FastAPI sidecar，建议预留 8 GB 以上内存。
-- 默认本地 Demo 不需要任何密钥。Ollama 是可选项；未安装或未运行时，AI sidecar 会返回确定性的规则分析。
+打开 [http://localhost:8080](http://localhost:8080)。
 
-可选的非 Docker 工具：
+### 完整投研栈
 
-- Java 17 和 Maven 3.9+，用于 `cd backend && mvn spring-boot:run`。
-- Python 3.12，用于直接运行 `ai-service`。
-- Ollama 和 `qwen2.5:7b`，用于本地大模型分析。
-
-### 1. 克隆并以后台服务启动完整栈
+通过 Docker Compose 同时运行 PostgreSQL/pgvector、Redis、RabbitMQ、Spring Boot Backend 和 FastAPI AI Sidecar。
 
 ```bash
-git clone https://github.com/juanjuandog/FinSight-AI ~/work/FinSight-AI
-cd ~/work/FinSight-AI
+git clone https://github.com/juanjuandog/FinSight-AI.git
+cd FinSight-AI
 docker compose up -d --build
-```
-
-这会以 detached 模式启动 backend、Dashboard、PostgreSQL/pgvector、RabbitMQ、Redis、FastAPI AI sidecar、Elasticsearch 和 MinIO。终端关闭后容器仍会继续运行。
-
-检查状态并打开页面：
-
-```bash
-docker compose ps
-curl -fsS http://localhost:8080/actuator/health
-curl -fsS http://localhost:8001/health
-open http://localhost:8080
-```
-
-服务管理命令：
-
-```bash
-docker compose logs -f backend
-docker compose restart backend ai-service
-docker compose stop
-docker compose start
-docker compose down
-```
-
-本地访问地址：
-
-| 服务 | 地址 |
-| --- | --- |
-| Dashboard 和 Spring Boot API | `http://localhost:8080` |
-| Backend health | `http://localhost:8080/actuator/health` |
-| FastAPI AI sidecar health | `http://localhost:8001/health` |
-| RabbitMQ management UI | `http://localhost:15672` |
-| Elasticsearch | `http://localhost:9200` |
-| MinIO API / console | `http://localhost:9000` / `http://localhost:9001` |
-
-默认本地账号密码在 `docker-compose.yml` 中定义：PostgreSQL 和 RabbitMQ 为 `finsight` / `finsight`，MinIO 为 `finsight` / `finsight123`。
-
-### 2. 运行 Demo 数据流
-
-另开一个终端：
-
-```bash
 ./scripts/quick-demo.sh
 ```
 
-也可以分别运行小流程：
+默认 Demo 不需要 API Key。Ollama 是可选项，本地模型不可用时会使用确定性降级保持主流程可运行。完整 Compose 栈建议预留约 8 GB 可用内存。
 
-```bash
-./scripts/demo-flow.sh
-./scripts/demo-workflow.sh
-```
-
-常用接口：
-
-```bash
-GET  /api/workflows/summary
-POST /api/evaluations/rag/run
-GET  /api/companies/600519/ai-analysis/latest
-GET  /api/document-index/600519/search?q=现金流风险
-```
-
-`./scripts/quick-demo.sh` 后的示例信号：
-
-| 信号 | 示例结果 |
-| --- | --- |
-| Ingestion | `documentCount: 6`、`statementCount: 3` |
-| Metric engine | `metricCount: 60`、`riskSignalCount: 2` |
-| Evidence index | `600519` 有 `6 documents`、`6 chunks` |
-| Intelligence graph | `20 events`、`36 entities`、`47 relations` |
-| RAG evaluation | `totalCases: 3`，具体分数会随公开数据源变化 |
-
-### 3. 不使用 Docker 运行
-
-如果只想轻量体验本地后端，可以使用内存仓储：
-
-```bash
-cd backend
-mvn spring-boot:run
-open http://localhost:8080
-```
-
-## 模块结构
-
-- `backend`：Spring Boot 后端，包含 API、领域工作流、指标计算、RAG 编排和 Dashboard。
-- `ai-service`：FastAPI AI 能力服务，懒加载多语言语义 embedding 与 cross-encoder
-  reranker，并提供文档解析和答案生成接口；离线环境保留确定性降级路径。
-- `docker`：本地基础设施占位与 compose 支持。
-
-## 运行模式
-
-本地后端：
-
-```bash
-cd backend
-mvn spring-boot:run
-```
-
-PostgreSQL profile：
-
-```bash
-docker compose up -d postgres
-cd backend
-mvn spring-boot:run -Dspring-boot.run.profiles=postgres,prod
-```
-
-PostgreSQL + RabbitMQ 工作流：
-
-```bash
-./scripts/run-backend-workflow.sh
-```
-
-生产近似完整栈：
-
-```bash
-./scripts/run-full-stack.sh
-open http://localhost:8080
-```
-
-AI service：
-
-```bash
-cd ai-service
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8001
-```
-
-可选 Ollama：
-
-```bash
-ollama serve
-ollama pull qwen2.5:7b
-```
-
-如果 Ollama 未安装、未运行或模型缺失，系统会返回 `aiGenerated=false` 的规则兜底结果，Dashboard 仍然可用。
-
-## 本地配置
-
-默认 Docker Compose 配置不需要 `.env` 文件。只有需要替换本地基础设施或启用可选 LLM 行为时，才需要覆盖这些变量：
-
-| 变量 | 默认值 | 用途 |
+| 模式 | 适合场景 | 运行环境 |
 | --- | --- | --- |
-| `OLLAMA_BASE_URL` | Docker 中为 `http://host.docker.internal:11434` | 可选本地 Ollama 地址 |
-| `OLLAMA_MODEL` | `qwen2.5:7b` | 可选 Ollama 模型名 |
-| `OLLAMA_TIMEOUT_SECONDS` | `45` | AI sidecar 调用 Ollama 的超时时间 |
-| `FINSIGHT_SCHEDULER_ENABLED` | `false` | 是否启用股票池同步和批量分析调度 |
-| `FINSIGHT_SCHEDULER_BATCH_LIMIT` | `20` | 调度批量任务上限 |
-| `FINSIGHT_STOCK_UNIVERSE_FREE_PROVIDER_ENABLED` | `true` | 是否启用免费公开股票池数据源 |
-| `FINSIGHT_AI_SERVICE_ENABLED` | Docker profile 中为 `true` | backend 是否调用 FastAPI sidecar |
-| `SPRING_DATASOURCE_URL` | Docker 中为 `jdbc:postgresql://postgres:5432/finsight` | backend PostgreSQL 连接 |
-| `SPRING_DATASOURCE_USERNAME` | `finsight` | backend PostgreSQL 用户名 |
-| `SPRING_DATASOURCE_PASSWORD` | `finsight` | backend PostgreSQL 密码 |
-| `SPRING_RABBITMQ_HOST` | Docker 中为 `rabbitmq` | backend RabbitMQ host |
-| `SPRING_RABBITMQ_USERNAME` | `finsight` | backend RabbitMQ 用户名 |
-| `SPRING_RABBITMQ_PASSWORD` | `finsight` | backend RabbitMQ 密码 |
-| `SPRING_DATA_REDIS_URL` | Docker 中为 `redis://redis:6379` | backend Redis 连接 |
-| `FINSIGHT_AI_SERVICE_URL` | Docker 中为 `http://ai-service:8001` | backend 到 sidecar 的 URL |
+| 轻量模式 | 查看 UI、阅读代码和面试演示 | Java 17、Maven |
+| 完整模式 | 演示任务恢复、Redis 协调、pgvector 检索和 AI Sidecar | Docker Compose |
 
-`scripts/quick-demo.sh` 还支持 `BASE_URL` 和 `OUTPUT_DIR`，分别用于指定 backend 地址和保存 JSON 响应。
+Profile、环境变量、服务地址和故障恢复步骤见[故障排查文档](docs/troubleshooting.md)。
 
-### 常见问题
+## 系统架构
 
-- Docker daemon 不可用：先启动 Docker Desktop、OrbStack、Colima 或 Linux Docker 服务，再运行 `docker compose ps`。
-- 端口被占用：停止冲突服务，或修改 `docker-compose.yml` 中的宿主机端口。
-- 首次构建较慢：第一次镜像构建会下载 Maven 和 Python 依赖，后续构建会复用 Docker cache。
-- Ollama 不可用：不影响启动。`/health` 会显示配置的模型名，AI sidecar 在无法访问 Ollama 时会返回确定性兜底分析。
+```mermaid
+flowchart LR
+    UI["投研工作区"] --> API["Spring Boot API"]
+    API --> WF["Workflow Orchestrator"]
+    WF --> MQ["RabbitMQ"]
+    WF --> Lease["Redis Lease & Cache"]
+    WF --> DB["PostgreSQL / pgvector"]
 
-## 示例 API 流程
-
-1. `POST /api/ingestion/demo` 初始化样例公司文档和财务报表。
-2. `POST /api/metrics/recalculate/600519` 计算财务指标和风险信号。
-3. `POST /api/analysis/ask` 提交证据驱动的投研问题。
-4. `POST /api/document-index/{symbol}/rebuild` 重建文档证据块。
-5. `POST /api/intelligence/{symbol}/rebuild` 构建时间线事件和轻量知识图谱。
-
-异步工作流：
-
-```bash
-POST /api/ingestion/demo/async
-GET /api/workflows
-GET /api/document-index/600519/search?q=现金流风险
-GET /api/metrics/600519/runs
-GET /api/intelligence/600519/timeline
-GET /api/intelligence/600519/graph
-POST /api/evaluations/rag/run
+    API --> Retrieval["全文 + Vector + RRF"]
+    Retrieval --> DB
+    Retrieval --> Sidecar["FastAPI: Embed · Rerank · Generate"]
+    Sidecar -. 可选 .-> Ollama["Ollama"]
+    Sidecar --> Report["快照绑定报告"]
+    Report --> DB
+    API --> Eval["RAG Evaluation"]
+    Eval --> Retrieval
 ```
 
-## 数据库阶段
+Spring Boot 服务负责领域状态和任务编排，Python Sidecar 负责面向模型的操作。这个边界让工作流恢复和报告一致性不依赖具体模型运行时。
 
-`postgres,prod` profiles 下由 Flyway 创建核心 schema：
+完整的请求流、状态流和数据流见[架构文档](docs/architecture.md)。
 
-- `companies`
-- `financial_documents`
-- `financial_statements`
-- `financial_metrics`
-- `risk_signals`
-- `workflow_tasks`
-- `company_events`
-- `rag_traces`
-- `stock_analysis_reports`
-- `user_watchlists`
+## 技术栈
 
-默认 profile 使用内存仓储，方便无 Docker 本地运行。
+| 层级 | 技术 |
+| --- | --- |
+| 核心 API | Java 17、Spring Boot 3.3.5、JDBC、Flyway |
+| 任务工作流 | RabbitMQ、任务状态机、重试和死信恢复 |
+| 分布式协调 | Redis、Lua Lease、Fencing Token、快照感知缓存 |
+| 检索 | PostgreSQL JSONB、全文检索、pgvector、RRF、Rerank |
+| AI 运行时 | FastAPI、Sentence Embedding、Cross-encoder Rerank、可选 Ollama |
+| 产品前端 | 由 Spring Boot 托管的响应式 HTML、CSS 和 JavaScript |
+| 工程运维 | Docker Compose、Actuator、Prometheus、GitHub Actions |
 
-## 工作流阶段
+## 仓库结构
 
-FinSight 将长链路投研任务拆成任务生命周期和执行阶段：
-
-- `WorkflowTask` 存储 idempotency key、status、agent stage、attempt count、payload、error message、lease owner、fencing token 和更新时间。
-- `WorkflowTaskPublisher` 提供本地直连 publisher 和 RabbitMQ publisher 两种实现。
-- `WorkflowOrchestrator` 基于 Redis Lua single-flight lease、幂等 key 和本地降级锁控制多实例重复执行。
-- `WorkflowRecoveryScheduler` 扫描超时 `RUNNING` 任务，进行恢复、重试或 dead-letter。
-- Agent stages 覆盖 ingestion、metrics、indexing、intelligence build、AI analysis、success、failure 和 recovery。
-- `RabbitWorkflowListener` 消费消息，并在 RabbitMQ 拒绝消息时进入 dead-letter 队列。
-
-运行：
-
-```bash
-./scripts/run-backend-workflow.sh
-./scripts/demo-workflow.sh
+```text
+backend/        Spring Boot API、工作流、检索、指标与静态前端
+ai-service/     FastAPI Embedding、Rerank 与生成 Sidecar
+scripts/        Demo、验证、Benchmark 与截图脚本
+docs/           架构、API、评测、产品和面试说明
+docker-compose.yml
 ```
 
-## 检索阶段
+## 质量验证
 
-检索层将金融文档切成可追溯 evidence chunk：
+主分支 CI 包含：
 
-- `DocumentChunker` 对长文档做带 overlap 的切分，并保留 section metadata。
-- `EmbeddingService` 本地使用确定性 384 维 embedding，也可调用 FastAPI sidecar `/embed`。
-- `DocumentChunkRepository` 支持 keyword search、vector search 和 chunk replacement。
-- PostgreSQL profile 使用 JSONB、全文索引和 pgvector cosine index。
-- `HybridRetrievalGateway` 合并关键词和向量召回，去重后提供给 RAG。
+- Maven 单元测试与集成测试，包括基于 Testcontainers 的基础设施测试；
+- Shell 脚本语法检查；
+- Python 服务与 Benchmark 脚本语法检查。
 
-接口：
+本地运行 Backend 测试：
 
 ```bash
-POST /api/document-index/600519/rebuild
-GET /api/document-index/600519/count
-GET /api/document-index/600519/search?q=现金流风险
+cd backend
+mvn test
 ```
 
-## 指标引擎阶段
+## 文档
 
-指标引擎将硬编码 ratio 升级为可治理计算链路：
+- [系统架构](docs/architecture.md)
+- [Research API](docs/api.md)
+- [Agent 工作流设计](docs/design-agent-workflow.md)
+- [Benchmark 与评测](docs/benchmark.md)
+- [产品需求](docs/product-requirements.md)
+- [故障排查](docs/troubleshooting.md)
+- [Roadmap](ROADMAP.md)
+- [参与贡献](CONTRIBUTING.md)
 
-- `MetricDefinitionCatalog` 定义源指标、比率指标、同比指标和衍生 spread。
-- `CoreFinancialMetricCalculator` 按财年顺序计算指标，并写入 plan version。
-- `MetricCalculationRun` 记录每次计算的 statement count、metric count、risk count、时间戳和 metadata。
-- `RiskRule` 组件检测现金流质量、应收压力、盈利能力趋势和杠杆风险。
+## 当前边界
 
-接口：
+FinSight 当前面向 A 股研究和本地 Production-like 演示。用户鉴权、受监管投研流程、交易执行、组合建议和多市场支持不在当前范围内。
 
-```bash
-GET /api/metrics/definitions
-POST /api/metrics/recalculate/600519
-GET /api/metrics/600519
-GET /api/metrics/600519/risks
-GET /api/metrics/600519/runs
-```
+## License
 
-## 公司画像阶段
-
-公司画像阶段把文档和指标升级为公司状态建模：
-
-- `CompanyIntelligenceService` 从公告、研报、指标和风险信号中抽取标准事件。
-- `CompanyEventRepository` 存储按时间排序的公司 timeline。
-- `KnowledgeGraphRepository` 存储轻量图谱实体和关系。
-- 图谱实体包括 company、industry、document、product/keyword、financial metric 和 risk event。
-- 图谱关系包括行业归属、文档发布、关键词提及、财务指标、风险信号和时间线事件。
-
-接口：
-
-```bash
-POST /api/intelligence/600519/rebuild
-GET /api/intelligence/600519/timeline
-GET /api/intelligence/600519/graph
-```
-
-## Dashboard 与评测阶段
-
-- Spring Boot 从 `/` 提供静态 Dashboard。
-- Dashboard 展示 workflow task、metric output、retrieval evidence、timeline events、graph counts 和 evaluation results。
-- `EvaluationCaseCatalog` 定义固定金融 QA 测试用例。
-- `RagEvaluationService` 评测 RAG hit rate、evidence coverage、answer coverage、citation presence、hallucination risk、conclusion consistency、confidence calibration 和 latency。
-
-接口：
-
-```bash
-GET /
-GET /api/evaluations/rag/cases
-POST /api/evaluations/rag/run
-```
-
-## Stock AI 阶段
-
-- `StockUniverseService` 从免费公开数据源同步 5500+ A 股股票池，并支持 Eastmoney search 降级。
-- `StockAnalysisApplicationService` 支持单股和批量分析任务提交。
-- `StockAiAnalysisService` 将行情、指标、风险信号和 RAG 证据组装为 AI 分析上下文。
-- AI 分析优先调用 FastAPI sidecar 和本地 Ollama，不可用时降级为确定性规则。
-- `stock_analysis_reports` 存储 model/source metadata、citations、context hash、`data_snapshot_hash`、report version 和 generated time。
-- `StockAnalysisCache` 提供内存和 Redis 两种实现；缓存 key 绑定 data snapshot，避免复用过期结论。
-- `user_watchlists` 使用 `X-Finsight-User` header 提供用户级自选股基础能力。
-
-接口：
-
-```bash
-POST /api/companies/sync-a-shares
-POST /api/companies/batch-analysis
-GET /api/companies/600519/ai-analysis
-GET /api/companies/600519/ai-analysis/latest
-GET /api/companies/600519/ai-analysis/history
-GET /api/watchlist
-POST /api/watchlist/600519
-DELETE /api/watchlist/600519
-```
-
-## 工程化阶段
-
-- Docker Compose 可启动 `backend`、`ai-service`、PostgreSQL/pgvector、RabbitMQ、Redis、Elasticsearch 和 MinIO。
-- `postgres,rabbitmq,redis,prod` profiles 启用持久化仓储、Flyway、pgvector、Redis cache 和 RabbitMQ task dispatch。
-- `RestAiServiceClient` 调用 FastAPI `/rerank` 和 `/generate-answer`，同时保留确定性本地 fallback。
-- Workflow APIs 暴露 task list、task detail、status summary 和 failed/dead-letter manual retry。
-- Spring Boot Actuator 暴露 `/actuator/health`、`/actuator/metrics` 和 `/actuator/prometheus`。
-- 测试覆盖 deterministic embedding tests 和 PostgreSQL/pgvector + RabbitMQ Testcontainers smoke test。
-
-接口：
-
-```bash
-GET /actuator/health
-GET /actuator/prometheus
-GET /api/workflows/summary
-GET /api/workflows/{taskId}
-POST /api/workflows/{taskId}/retry
-```
+项目基于 [MIT License](LICENSE) 发布。

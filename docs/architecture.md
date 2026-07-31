@@ -82,6 +82,12 @@ The retrieval layer combines:
 
 Every RAG answer records trace metadata so demos and regression checks can show which evidence supported the answer.
 
+For `/api/analysis/ask`, `dataSnapshotHash` fingerprints the complete ordered evidence
+list supplied to answer generation. It includes chunk identity, provenance metadata,
+section, and text; it treats null and empty fields differently and keeps reranked order
+significant. Retrieval scores are intentionally outside this boundary because the
+current generation prompt does not consume them.
+
 ## Evaluation
 
 The RAG evaluation service scores fixed financial QA cases with metrics that are meaningful for an AI research agent:

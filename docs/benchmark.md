@@ -47,6 +47,9 @@ FinSight currently scores each evaluation case with:
 - `conclusionConsistency`: whether risk and positive conclusions are expressed coherently.
 - `confidenceCalibration`: whether confidence follows grounding quality.
 - `dataSnapshotHash`: stable digest of the ordered evidence passed to answer generation.
+  It includes chunk identity, provenance metadata, section, and text, with a distinct
+  encoding for null versus empty fields. Order is significant; retrieval scores are
+  excluded because the current answer-generation prompt does not consume them.
 - `latencyMillis`: response latency captured in the RAG trace.
 
 The goal is not to claim perfect financial reasoning. The goal is to create a regression loop for evidence-grounded AI output.

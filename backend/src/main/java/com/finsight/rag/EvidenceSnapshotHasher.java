@@ -12,8 +12,10 @@ import java.util.List;
 /**
  * Computes a stable digest of the ordered evidence passed to answer generation.
  *
- * <p>Fields are length-prefixed so the encoding is unambiguous. Evidence order is
- * intentionally significant because reranking changes the model-facing context.</p>
+ * <p>Fields are presence-marked and length-prefixed so null and empty values have
+ * distinct, unambiguous encodings. Evidence order is intentionally significant because
+ * reranking changes the model-facing context. Retrieval scores are excluded: they are
+ * diagnostic metadata and do not enter the current answer-generation prompt.</p>
  */
 public final class EvidenceSnapshotHasher {
     private EvidenceSnapshotHasher() {
@@ -24,13 +26,18 @@ public final class EvidenceSnapshotHasher {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             updateInt(digest, evidence.size());
             for (EvidenceChunk chunk : evidence) {
-                updateString(digest, chunk.documentId());
-                updateString(digest, chunk.title());
-                updateString(digest, chunk.documentType().name());
-                updateString(digest, chunk.publishedAt().toString());
-                updateString(digest, chunk.section());
-                updateString(digest, chunk.text());
-                updateLong(digest, Double.doubleToLongBits(chunk.score()));
+                updateNullableString(digest, chunk.documentId());
+                updateNullableString(digest, chunk.title());
+                updateNullableString(
+                        digest,
+                        chunk.documentType() == null ? null : chunk.documentType().name()
+                );
+                updateNullableString(
+                        digest,
+                        chunk.publishedAt() == null ? null : chunk.publishedAt().toString()
+                );
+                updateNullableString(digest, chunk.section());
+                updateNullableString(digest, chunk.text());
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException ex) {
@@ -38,7 +45,12 @@ public final class EvidenceSnapshotHasher {
         }
     }
 
-    private static void updateString(MessageDigest digest, String value) {
+    private static void updateNullableString(MessageDigest digest, String value) {
+        if (value == null) {
+            digest.update((byte) 0);
+            return;
+        }
+        digest.update((byte) 1);
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         updateInt(digest, bytes.length);
         digest.update(bytes);
@@ -46,9 +58,5 @@ public final class EvidenceSnapshotHasher {
 
     private static void updateInt(MessageDigest digest, int value) {
         digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(value).array());
-    }
-
-    private static void updateLong(MessageDigest digest, long value) {
-        digest.update(ByteBuffer.allocate(Long.BYTES).putLong(value).array());
     }
 }

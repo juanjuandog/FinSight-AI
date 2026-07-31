@@ -67,6 +67,12 @@ Trace fields:
 - `POST /api/analysis/ask`: source-grounded answer with evidence and a RAG trace.
   The trace includes `dataSnapshotHash`, a stable SHA-256 digest of the ordered
   model-facing evidence, so runs can verify that they used the same retrieved context.
+  The digest covers each selected chunk's document id, title, document type, nullable
+  publication date, section, and text. Chunk order is significant because it is the
+  reranked order supplied to answer generation. Retrieval `score` is excluded because
+  it is diagnostic metadata and does not enter the current answer-generation prompt;
+  changing only score values without changing order or content therefore preserves the
+  fingerprint. Null values have a distinct encoding from empty strings.
 - `POST /api/evaluations/rag/run`: RAG quality evaluation.
 - `GET /api/document-index/{symbol}/search?q=...`: direct evidence search.
 - `GET /api/companies/{symbol}/analysis-status`: data readiness and latest workflow status.

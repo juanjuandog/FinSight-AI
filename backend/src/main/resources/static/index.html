@@ -3,222 +3,216 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FinSight Institutional Research Console</title>
+  <meta name="description" content="FinSight AI 证据驱动型股票研究工作台">
+  <title>FinSight AI — 股票研究</title>
   <link rel="icon" type="image/svg+xml" href="/brand-favicon.svg">
-  <link rel="stylesheet" href="/styles.css?v=20260520a">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=20260728i">
+  <link rel="stylesheet" href="/shell.css?v=20260728i">
+  <link rel="stylesheet" href="/collections.css?v=20260728i">
+  <link rel="stylesheet" href="/workspaces.css?v=20260728i">
 </head>
-<body>
-  <header class="terminal-topbar">
-    <div class="brand">
-      <strong>FinSight AI</strong>
-      <span>Institutional Research Console</span>
-    </div>
-    <div class="stock-console" aria-label="股票分析控制台">
-      <label class="symbol-search">
-        <span>搜索标的</span>
-        <input id="symbolInput" value="600519" maxlength="16" list="stockSuggestions" aria-label="股票代码">
-      </label>
-      <datalist id="stockSuggestions"></datalist>
-      <span id="marketStatus" class="market-status">市场状态 待连接</span>
-      <span id="universeStatus" class="top-updated">更新时间 --</span>
-      <button id="runDemo" class="demo-button" type="button">Run Demo</button>
-      <button id="runWorkflow">生成 AI 研报</button>
-    </div>
-  </header>
+<body class="pearl-workspace">
+  <div class="workspace-shell">
+    <aside id="productNav" class="workspace-nav" aria-label="主导航">
+      <a class="rail-brand" href="#companyWorkspace" data-workspace-link="company" aria-label="FinSight AI 首页">
+        <img class="brand-mark" src="/brand-favicon.svg" alt="" aria-hidden="true">
+        <span>
+          <strong>FinSight</strong>
+          <small>AI Research</small>
+        </span>
+      </a>
 
-  <main class="terminal-shell">
-    <aside class="left-rail">
-      <section class="panel compact-panel">
-        <div class="section-title tight">
-          <h2>股票池</h2>
-          <span id="poolCount">--</span>
-        </div>
-        <div class="stock-table-head">
-          <span>名称</span>
-          <span>代码</span>
-          <span>涨跌幅</span>
-        </div>
-        <div id="stockList" class="stock-list"></div>
-      </section>
+      <button id="newResearchButton" class="new-research-button" type="button">新建研究</button>
+
+      <nav class="rail-links" aria-label="研究功能">
+        <a class="product-link active" data-workspace="company" href="#companyWorkspace" aria-current="page">公司研究</a>
+        <a class="product-link" data-workspace="analysis" href="#analysisWorkspace">AI 分析</a>
+        <a class="product-link" data-workspace="evidence" href="#evidenceWorkspace">证据来源</a>
+        <a class="product-link" data-workspace="events" href="#eventsWorkspace">近期事件</a>
+        <a class="product-link" data-workspace="watchlist" href="#watchlistWorkspace">关注列表</a>
+      </nav>
+
+      <div class="rail-spacer"></div>
+      <div class="rail-status">
+        <span id="marketStatus" class="market-status">行情待连接</span>
+        <span id="universeStatus" class="top-updated">更新时间 --</span>
+      </div>
+      <p class="rail-disclaimer">仅供研究参考，不构成投资建议</p>
     </aside>
 
-    <section class="workspace">
-      <section class="chart-focus-row">
-        <section class="first-screen-cards">
-          <section id="overview" class="panel market-header">
-            <div class="summary-heading">
-              <p class="eyebrow">Current Symbol</p>
-              <h1 id="companyName">贵州茅台</h1>
-              <p id="companyMeta">600519.SH</p>
-            </div>
-            <div id="marketQuote" class="market-summary">
-              <span>行情加载中</span>
-            </div>
-            <div id="summaryRatingBadge" class="rating neutral">AI评级 中性</div>
-          </section>
+    <div class="workspace-center">
+      <header class="workspace-header">
+        <button id="mobileMenuButton" class="mobile-menu-button" type="button" aria-label="打开导航" aria-expanded="false">菜单</button>
+        <span id="workspaceLabel" class="workspace-label">公司研究</span>
+        <label class="stock-search">
+          <span class="sr-only">搜索公司或股票代码</span>
+          <input id="symbolInput" value="600519" maxlength="16" list="stockSuggestions" placeholder="搜索股票、公司或代码">
+          <datalist id="stockSuggestions"></datalist>
+          <button id="symbolSearchButton" type="button">搜索</button>
+        </label>
+      </header>
 
-          <section id="thesis" class="panel analysis-card decision-card">
-            <div class="section-title">
-              <div>
-                <h2>AI 简要结论</h2>
-                <span id="analysisUpdatedAt">等待分析</span>
-              </div>
-              <div class="rating-stack">
-                <div id="ratingBadge" class="rating neutral">中性</div>
-                <strong id="confidenceScore">--</strong>
-              </div>
-            </div>
-            <p id="analysisConclusion" class="conclusion">输入股票代码并点击“生成 AI 研报”，系统会输出一句话结论。</p>
-            <div class="decision-grid">
-              <article>
-                <span>理由</span>
-                <div id="positivePoints" class="decision-list">等待分析结果。</div>
-              </article>
-              <article>
-                <span>风险</span>
-                <div id="negativePoints" class="decision-list">等待分析结果。</div>
-              </article>
-            </div>
-          </section>
-        </section>
+      <main id="companyWorkspace" class="workspace-view company-workspace" data-workspace-view="company">
+        <header class="company-heading">
+          <div class="company-identity">
+            <p id="companyMeta" class="company-symbol">600519.SH</p>
+            <h1 id="companyName">贵州茅台</h1>
+          </div>
+          <div id="marketQuote" class="market-summary"><span>行情加载中</span></div>
+        </header>
 
-        <section class="panel chart-panel chart-hero">
-          <div class="section-title">
+        <section id="overview" class="price-panel" aria-labelledby="priceHeading">
+          <div class="panel-heading">
             <div>
-              <h2>价格走势</h2>
-              <span>收盘价 / MA5 / MA20 / MA60 / 成交量</span>
+              <h2 id="priceHeading">价格走势</h2>
+              <p>历史收盘价</p>
             </div>
             <div class="range-tabs" aria-label="图表周期">
-              <button class="range-tab active" data-limit="60">3M</button>
-              <button class="range-tab" data-limit="120">6M</button>
-              <button class="range-tab" data-limit="240">1Y</button>
+              <button class="range-tab" data-limit="60" type="button" aria-pressed="false">3M</button>
+              <button class="range-tab active" data-limit="120" type="button" aria-pressed="true">6M</button>
+              <button class="range-tab" data-limit="240" type="button" aria-pressed="false">1Y</button>
             </div>
-          </div>
-          <div class="chart-wrap">
-            <canvas id="priceChart" aria-label="股票价格走势折线图"></canvas>
-            <div id="chartTooltip" class="chart-tooltip" hidden></div>
           </div>
           <div id="chartStats" class="chart-stats"></div>
-          <div class="chart-legend">
-            <span><i class="line close"></i>收盘价</span>
-            <span><i class="line ma5"></i>MA5</span>
-            <span><i class="line ma20"></i>MA20</span>
-            <span><i class="line ma60"></i>MA60</span>
-            <span><i class="bar"></i>成交量</span>
+          <div class="chart-wrap">
+            <canvas id="priceChart" aria-label="股票历史收盘价折线图"></canvas>
+            <div id="chartTooltip" class="chart-tooltip" hidden></div>
+          </div>
+          <p class="chart-source">数据来源以最新行情快照为准</p>
+        </section>
+
+        <section id="health" class="metric-panel" aria-labelledby="metricHeading">
+          <div class="panel-heading compact">
+            <div>
+              <h2 id="metricHeading">关键指标</h2>
+              <p>最新财务数据</p>
+            </div>
+          </div>
+          <div id="healthList" class="health-grid"></div>
+        </section>
+      </main>
+
+      <main id="analysisWorkspace" class="workspace-view analysis-workspace" data-workspace-view="analysis" hidden>
+        <header class="view-heading">
+          <div>
+            <h1>这家公司当前值得关注什么？</h1>
+            <p>基于最新行情、财务指标和公开证据生成结构化结论。</p>
+          </div>
+          <button id="runWorkflow" class="primary-action" type="button">生成分析</button>
+        </header>
+
+        <section id="analysis" class="analysis-panel">
+          <div class="analysis-heading">
+            <div>
+              <p id="analysisUpdatedAt" class="analysis-meta" hidden>等待分析</p>
+              <div id="ratingBadge" class="rating neutral">待分析</div>
+            </div>
+            <strong id="confidenceScore" class="confidence-score pending" hidden>置信度待生成</strong>
+          </div>
+          <p id="analysisConclusion" class="analysis-conclusion">生成分析后，这里会直接给出结论、理由与风险。</p>
+          <div class="analysis-columns">
+            <article>
+              <h2>支持因素</h2>
+              <div id="positivePoints" class="decision-list">暂无核心理由</div>
+            </article>
+            <article>
+              <h2>风险因素</h2>
+              <div id="negativePoints" class="decision-list">暂无主要风险</div>
+            </article>
+          </div>
+          <button id="openAnalysisEvidence" class="text-action" type="button">查看相关证据</button>
+        </section>
+      </main>
+
+      <main id="evidenceWorkspace" class="workspace-view evidence-workspace" data-workspace-view="evidence" hidden>
+        <header class="view-heading">
+          <div>
+            <h1>检索可核验的原始依据</h1>
+            <p>从财报、公告和结构化指标中查找与研究问题直接相关的内容。</p>
+          </div>
+        </header>
+
+        <section class="evidence-scope-bar" aria-label="检索范围">
+          <div>
+            <span>检索范围</span>
+            <strong id="evidenceScopeLabel">当前公司</strong>
+          </div>
+          <div class="scope-tabs">
+            <button class="scope-tab active" data-scope="company" type="button" aria-pressed="true">当前公司</button>
+            <button class="scope-tab" data-scope="global" type="button" aria-pressed="false">全市场</button>
           </div>
         </section>
-      </section>
 
-      <section id="openSourceProof" class="proof-grid">
-        <article class="panel proof-card primary-proof">
-          <span>Agent Workflow</span>
-          <strong id="workflowProof">--</strong>
-          <p id="workflowProofMeta">状态机、幂等任务、Redis Lua Single-flight 和超时恢复。</p>
-        </article>
-        <article class="panel proof-card">
-          <span>RAG Evaluation</span>
-          <strong id="evaluationProof">--</strong>
-          <p id="evaluationProofMeta">证据覆盖、幻觉风险、结论一致性和置信度校准。</p>
-        </article>
-        <article class="panel proof-card">
-          <span>Report Cache</span>
-          <strong id="cacheProof">Snapshot-bound</strong>
-          <p id="cacheProofMeta">dataSnapshotHash + contextHash + reportVersion 防止复用过期结论。</p>
-        </article>
-      </section>
-
-      <section id="researchDesk" class="research-grid">
-        <article class="panel research-panel">
-          <div class="section-title">
-            <div>
-              <h2>Research Task</h2>
-              <span>统一投研任务入口：幂等调度、状态机推进和失败恢复</span>
-            </div>
-            <strong id="researchTaskStatus" class="task-status">Ready</strong>
+        <section class="evidence-query-panel">
+          <div class="evidence-company-context">
+            <span id="evidenceCompanySymbol">600519.SH</span>
+            <strong id="evidenceCompanyName">贵州茅台</strong>
           </div>
-          <div id="researchTimeline" class="timeline-strip"></div>
-          <dl id="researchTaskMeta" class="meta-grid"></dl>
-        </article>
-
-        <article class="panel research-panel">
-          <div class="section-title">
-            <div>
-              <h2>Report Trace</h2>
-              <span>报告版本、数据快照和证据绑定</span>
-            </div>
-            <strong id="reportTraceStatus" class="task-status neutral">Pending</strong>
+          <div class="evidence-question-box">
+            <label class="sr-only" for="searchInput">输入证据检索问题</label>
+            <input id="searchInput" value="公司经营现金流能否支撑当前利润质量？" placeholder="搜索财报、公告、指标和公司事件">
+            <button id="searchButton" type="button">检索</button>
           </div>
-          <div id="reportTrustPanel" class="trust-grid"></div>
-          <div id="reportEvidenceTrace" class="trace-list"></div>
-        </article>
-      </section>
+          <div class="query-suggestions" aria-label="常用检索问题">
+            <button type="button">现金流质量</button>
+            <button type="button">利润增长原因</button>
+            <button type="button">近期重大公告</button>
+          </div>
+        </section>
 
-      <section id="health" class="panel">
-        <div class="section-title">
+        <div id="questionStatus" class="question-status" aria-live="polite"></div>
+        <article id="questionAnswer" class="question-answer" hidden></article>
+        <section id="sourcePanel" class="source-panel" hidden>
+          <div class="source-panel-heading">
+            <strong>检索结果</strong>
+            <span>最多显示 6 条</span>
+          </div>
+          <div id="retrievalList" class="evidence-list"></div>
+        </section>
+      </main>
+
+      <main id="eventsWorkspace" class="workspace-view events-workspace" data-workspace-view="events" hidden>
+        <header class="view-heading">
           <div>
-            <h2>关键财务指标</h2>
-            <span>只保留投研判断中最常用的核心指标</span>
+            <h1 id="eventsHeading">公司研究时间线</h1>
+            <p><strong id="eventCompanyName">贵州茅台</strong><span id="eventCompanySymbol">600519.SH</span> 的公开披露、指标变化和风险信号。</p>
           </div>
-        </div>
-        <div id="healthList" class="health-grid"></div>
-      </section>
+        </header>
+        <section class="events-panel" aria-labelledby="eventsHeading">
+          <div class="events-table events-table-heading" aria-hidden="true">
+            <span>日期</span>
+            <span>事件</span>
+            <span>类型</span>
+            <span>摘要</span>
+          </div>
+          <div id="eventList" class="event-list" aria-labelledby="eventsHeading">
+            <p class="empty-state">暂无近期事件，生成分析后会建立公司时间线。</p>
+          </div>
+        </section>
+      </main>
 
-      <section id="evidence" class="panel">
-        <div class="section-title">
+      <main id="watchlistWorkspace" class="workspace-view watchlist-workspace" data-workspace-view="watchlist" hidden>
+        <header class="view-heading watchlist-heading">
           <div>
-            <h2>证据来源</h2>
-            <span>公开财报、公告和指标文本的可追溯片段</span>
+            <h1>持续跟踪的公司</h1>
+            <p>从这里进入公司研究，不在主页面重复展示。</p>
           </div>
-          <div class="search-row">
-            <input id="searchInput" value="现金流风险" aria-label="检索问题">
-            <button id="searchButton" class="compact">查找证据</button>
-          </div>
+          <button id="addCurrentToWatchlist" class="secondary-action" type="button">加入当前公司</button>
+        </header>
+        <div class="watchlist-meta">
+          <span id="poolCount">0 只</span>
+          <span id="watchlistActionStatus" role="status" aria-live="polite"></span>
         </div>
-        <div id="retrievalList" class="list evidence-list"></div>
-      </section>
-    </section>
+        <section id="stockList" class="stock-list" aria-label="关注公司列表"></section>
+      </main>
+    </div>
+  </div>
 
-    <aside class="right-rail">
-      <section class="panel compact-panel ai-side-card">
-        <div class="section-title tight">
-          <h2>AI Brief</h2>
-          <span id="aiBriefMeta">Research View</span>
-        </div>
-        <div id="aiBriefPanel" class="ai-panel-body">
-          <p>等待生成 AI 研报，系统会汇总行情、指标和证据形成投研判断。</p>
-        </div>
-      </section>
+  <div id="navBackdrop" class="nav-backdrop" hidden></div>
 
-      <section class="panel compact-panel ai-side-card">
-        <div class="section-title tight">
-          <h2>Risk Signals</h2>
-          <span>Multi-factor</span>
-        </div>
-        <div id="riskSignalPanel" class="signal-list"></div>
-      </section>
-
-      <section class="panel compact-panel ai-side-card">
-        <div class="section-title tight">
-          <h2>Evidence Preview</h2>
-          <button id="openEvidence" class="text-link" type="button">查看完整证据链</button>
-        </div>
-        <div id="evidencePreviewPanel" class="evidence-preview">
-          <p>等待证据索引返回。</p>
-        </div>
-      </section>
-
-      <details class="panel compact-panel ai-side-card quality-collapsible">
-        <summary>
-          <span>Data Quality</span>
-          <strong id="dataQualitySummary">数据可信度加载中</strong>
-        </summary>
-        <div id="dataQualityPanel" class="quality-list">
-          <span>数据质量加载中</span>
-        </div>
-      </details>
-    </aside>
-  </main>
-
-  <script src="/app.js?v=20260520a"></script>
+  <script src="/app.js?v=20260728i"></script>
 </body>
 </html>

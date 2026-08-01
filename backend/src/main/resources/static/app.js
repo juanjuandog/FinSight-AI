@@ -1,17 +1,23 @@
 let symbol = "600519";
 let companies = [];
-let companyTotal = 0;
 let suggestionTimer = null;
 let chartLimit = 120;
 let latestQuote = null;
 let latestCandles = [];
 let latestAiAnalysis = null;
-let latestWorkflowSummary = null;
-let latestEvaluationRun = null;
-let latestResearchTask = null;
-let latestReportTrace = null;
+let latestEvents = [];
+let latestWatchlist = [];
+let eventsLoadError = false;
+let watchlistLoadError = false;
+let evidenceScope = "company";
+let refreshGeneration = 0;
+let chartGeneration = 0;
 
 const $ = (id) => document.getElementById(id);
+
+function cssToken(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
 
 async function request(path, options = {}) {
   const response = await fetch(path, options);
@@ -22,92 +28,213 @@ async function request(path, options = {}) {
 }
 
 async function refresh() {
+  const requestGeneration = ++refreshGeneration;
+  const requestedSymbol = symbol;
+  const requestedChartGeneration = ++chartGeneration;
   const [
     nextCompanies,
-    countResult,
     quote,
     candles,
     metrics,
     risks,
-    status,
     aiAnalysis,
-    reportTrace
+    eventsResult,
+    watchlistResult
   ] = await Promise.all([
     request("/api/companies?limit=200").catch(() => companies),
-    request("/api/companies/count").catch(() => ({ count: companies.length })),
-    request(`/api/market/quotes/${symbol}`).catch(error => ({
-      symbol,
-      name: `股票 ${symbol}`,
+    request(`/api/market/quotes/${requestedSymbol}`).catch(error => ({
+      symbol: requestedSymbol,
+      name: `股票 ${requestedSymbol}`,
       exchange: "CN",
       realtime: false,
       source: "LOCAL_ERROR",
       message: error.message
     })),
-    request(`/api/market/history/${symbol}?limit=${chartLimit}`).catch(() => []),
-    request(`/api/metrics/${symbol}`).catch(() => []),
-    request(`/api/metrics/${symbol}/risks`).catch(() => []),
-    request(`/api/companies/${symbol}/analysis-status`).catch(() => null),
-    request(`/api/companies/${symbol}/ai-analysis/latest`).catch(() => null),
-    request(`/api/research/reports/${symbol}/trace`).catch(() => null)
+    request(`/api/market/history/${requestedSymbol}?limit=${chartLimit}`).catch(() => []),
+    request(`/api/metrics/${requestedSymbol}`).catch(() => []),
+    request(`/api/metrics/${requestedSymbol}/risks`).catch(() => []),
+    request(`/api/companies/${requestedSymbol}/ai-analysis/latest`).catch(() => null),
+    request(`/api/intelligence/${requestedSymbol}/timeline`)
+      .then(data => ({ ok: true, data }))
+      .catch(error => ({ ok: false, error })),
+    request("/api/watchlist")
+      .then(data => ({ ok: true, data }))
+      .catch(error => ({ ok: false, error }))
   ]);
 
+  if (requestGeneration !== refreshGeneration || requestedSymbol !== symbol) {
+    return;
+  }
+
   companies = nextCompanies;
-  companyTotal = Number(countResult.count || companies.length || 0);
   latestQuote = quote;
-  latestCandles = candles;
   latestAiAnalysis = aiAnalysis;
-  latestReportTrace = reportTrace;
+  eventsLoadError = !eventsResult.ok;
+  watchlistLoadError = !watchlistResult.ok;
+  latestEvents = eventsResult.ok && Array.isArray(eventsResult.data) ? eventsResult.data : [];
+  latestWatchlist = watchlistResult.ok && Array.isArray(watchlistResult.data) ? watchlistResult.data : [];
+  if (requestedChartGeneration === chartGeneration) {
+    latestCandles = candles;
+  }
 
   renderUniverseStatus();
-  renderStockList();
+  renderWatchlist();
+  renderEvents();
   updateCompanyCard(quote);
-  renderDataStatus(status, quote, aiAnalysis);
-  renderReportMeta(aiAnalysis, status, metrics, risks, quote);
   renderAnalysis(metrics, risks, quote, aiAnalysis);
-  renderChart(candles, quote, aiAnalysis);
-  renderChartStats(candles, quote);
-  renderOpenSourceProof();
-  renderResearchDesk();
+  renderChart(latestCandles);
+  renderChartStats(latestCandles, quote);
 }
 
 function updateCompanyCard(quote = null) {
   const company = companies.find(item => item.symbol === symbol);
   const name = quote?.name || company?.name || `股票 ${symbol}`;
-  const industry = company?.industry || "待分析";
   const exchange = quote?.exchange || company?.exchange || "CN";
   $("companyName").textContent = name;
   $("companyMeta").textContent = `${symbol}.${exchange}`;
+  $("evidenceCompanyName").textContent = name;
+  $("evidenceCompanySymbol").textContent = `${symbol}.${exchange}`;
+  $("eventCompanyName").textContent = name;
+  $("eventCompanySymbol").textContent = `${symbol}.${exchange}`;
   renderQuote(quote);
 }
 
 function renderUniverseStatus(message = "") {
-  const updatedAt = latestQuote?.tradeTime || formatDateTime(latestAiAnalysis?.generatedAt) || "--";
+  const updatedAt = latestQuote?.tradeTime || formatDateTime(latestAiAnalysis?.generatedAt) || "待同步";
   $("universeStatus").textContent = message || `更新时间 ${updatedAt}`;
-  $("poolCount").textContent = `${companyTotal || companies.length || 0} 只`;
 }
 
-function renderStockList() {
-  const activeCompany = companies.find(company => company.symbol === symbol);
-  const visible = companies.slice(0, 24);
-  if (activeCompany && !visible.some(company => company.symbol === symbol)) {
-    visible.unshift(activeCompany);
+function renderWatchlist() {
+  if (watchlistLoadError) {
+    $("stockList").innerHTML = `
+      <div class="empty-state error-state">
+        <strong>关注列表暂时无法加载</strong>
+        <p>服务恢复后会自动显示原有关注公司。</p>
+      </div>
+    `;
+    $("poolCount").textContent = "同步失败";
+    return;
   }
-  $("stockList").innerHTML = visible.map(company => {
-    const isActive = company.symbol === symbol;
-    const changePercent = isActive && latestQuote ? numeric(latestQuote.changePercent) : null;
-    const changeText = changePercent == null ? "--" : `${formatSigned(changePercent)}%`;
-    const changeClass = changePercent == null ? "" : changePercent >= 0 ? "up" : "down";
+
+  const rows = latestWatchlist.map(entry => {
+    const company = entry.company || entry;
+    const companySymbol = String(company.symbol || "");
+    const exchange = company.exchange || "CN";
+    const industry = company.industry || "待分类";
+    const companyName = company.name || `股票 ${companySymbol}`;
     return `
-    <button class="stock-row ${company.symbol === symbol ? "active" : ""}" data-symbol="${escapeHtml(company.symbol)}">
-      <span class="stock-name">${escapeHtml(company.name)}</span>
-      <span class="stock-code">${escapeHtml(company.symbol)}.${escapeHtml(company.exchange || "CN")}</span>
-      <span class="stock-change ${changeClass}">${escapeHtml(changeText)}</span>
-    </button>
+      <article class="stock-row ${companySymbol === symbol ? "active" : ""}">
+        <button class="stock-main" type="button" data-symbol="${escapeHtml(companySymbol)}">
+          <strong>${escapeHtml(companyName)}</strong>
+          <span>${escapeHtml(companySymbol)}.${escapeHtml(exchange)}&nbsp;&nbsp;${escapeHtml(industry)}</span>
+        </button>
+        <div class="stock-row-meta">
+          <time>${escapeHtml(formatDateTime(entry.createdAt) || "已关注")}</time>
+          <button class="stock-remove" type="button" data-symbol="${escapeHtml(companySymbol)}" aria-label="从关注列表移除${escapeHtml(companyName)}">移除</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  $("stockList").innerHTML = rows || `
+    <div class="empty-state">
+      <strong>暂无关注公司</strong>
+      <p>点击“加入当前公司”，把正在研究的股票放到这里。</p>
+    </div>
   `;
-  }).join("") || `<div class="item"><h3>暂无股票</h3><p>点击同步股票池后可加载 A 股列表。</p></div>`;
-  document.querySelectorAll(".stock-row").forEach(button => {
-    button.addEventListener("click", () => selectSymbol(button.dataset.symbol));
+  $("poolCount").textContent = `${latestWatchlist.length} 只`;
+
+  const addButton = $("addCurrentToWatchlist");
+  const alreadyFollowing = latestWatchlist.some(entry => (entry.company || entry).symbol === symbol);
+  addButton.disabled = alreadyFollowing;
+  addButton.textContent = alreadyFollowing ? "已在关注列表" : "加入当前公司";
+
+  document.querySelectorAll(".stock-main").forEach(button => {
+    button.addEventListener("click", async () => {
+      await selectSymbol(button.dataset.symbol);
+      setWorkspace("company");
+    });
   });
+  document.querySelectorAll(".stock-remove").forEach(button => {
+    button.addEventListener("click", () => removeFromWatchlist(button.dataset.symbol));
+  });
+}
+
+async function addCurrentCompanyToWatchlist() {
+  const button = $("addCurrentToWatchlist");
+  button.disabled = true;
+  $("watchlistActionStatus").textContent = "正在加入…";
+  try {
+    latestWatchlist = await request(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "POST" });
+    watchlistLoadError = false;
+    $("watchlistActionStatus").textContent = "已加入当前公司";
+    renderWatchlist();
+  } catch (error) {
+    button.disabled = false;
+    $("watchlistActionStatus").textContent = `加入失败：${error.message}`;
+  }
+}
+
+async function removeFromWatchlist(companySymbol) {
+  $("watchlistActionStatus").textContent = "正在移除…";
+  try {
+    latestWatchlist = await request(`/api/watchlist/${encodeURIComponent(companySymbol)}`, { method: "DELETE" });
+    watchlistLoadError = false;
+    $("watchlistActionStatus").textContent = "已从关注列表移除";
+    renderWatchlist();
+  } catch (error) {
+    $("watchlistActionStatus").textContent = `移除失败：${error.message}`;
+  }
+}
+
+function renderEvents() {
+  if (eventsLoadError) {
+    $("eventList").innerHTML = `
+      <div class="empty-state error-state">
+        <strong>近期事件暂时无法加载</strong>
+        <p>当前没有使用旧数据替代，请稍后再试。</p>
+      </div>
+    `;
+    return;
+  }
+
+  const rows = latestEvents.slice(0, 30).map(event => {
+    const type = eventTypeName(event.type);
+    return `
+      <article class="event-row">
+        <time>${escapeHtml(formatEventDate(event.happenedAt) || "日期待同步")}</time>
+        <strong>${escapeHtml(event.title || "未命名事件")}</strong>
+        <span class="event-type ${eventTypeClass(event.type)}">${escapeHtml(type)}</span>
+        <p>${escapeHtml(event.summary || "暂无摘要")}</p>
+      </article>
+    `;
+  }).join("");
+  $("eventList").innerHTML = rows || `
+    <div class="empty-state">
+      <strong>暂无近期事件</strong>
+      <p>生成分析后，系统会根据公开披露、指标变化和风险信号建立公司时间线。</p>
+    </div>
+  `;
+}
+
+function eventTypeName(type) {
+  return ({
+    FINANCIAL_RESULT: "财务",
+    RISK_SIGNAL: "风险",
+    MANAGEMENT_DISCUSSION: "管理层",
+    INDUSTRY_CHANGE: "公告",
+    RESEARCH_VIEW: "研究"
+  })[type] || "事件";
+}
+
+function eventTypeClass(type) {
+  if (type === "RISK_SIGNAL") {
+    return "risk";
+  }
+  if (type === "FINANCIAL_RESULT") {
+    return "financial";
+  }
+  return "neutral";
 }
 
 function renderQuote(quote) {
@@ -135,77 +262,25 @@ function renderQuote(quote) {
       <article><span>最高</span><strong>${formatNumber(quote.highPrice)}</strong></article>
       <article><span>最低</span><strong>${formatNumber(quote.lowPrice)}</strong></article>
       <article><span>成交额</span><strong>${formatMoney(amount)}</strong></article>
-      <article><span>数据源</span><strong>${escapeHtml(quote.source || "LOCAL")}</strong></article>
+      <article><span>数据源</span><strong>${escapeHtml(marketSourceName(quote.source))}</strong></article>
     </section>
   `;
-}
-
-function renderDataStatus(status, quote, aiAnalysis) {
-  if (!status) {
-    $("dataQualitySummary").textContent = "数据可信度待确认";
-    $("dataQualityPanel").innerHTML = `<div class="empty-note">数据质量暂不可用，等待后端状态接口返回。</div>`;
-    return;
-  }
-  const quoteTime = status.quoteTradedAt ? status.quoteTradedAt.replace("T", " ") : "--";
-  const metricTime = status.latestMetricRunAt ? status.latestMetricRunAt.replace("T", " ").replace("Z", "") : "--";
-  const workflow = status.latestWorkflowStatus || "暂无任务";
-  const aiTime = status.latestAiReportAt ? status.latestAiReportAt.replace("T", " ").replace("Z", "") : "--";
-  const qualities = [
-    ["行情源", status.quoteRealtime ? "Sina 实时行情接入正常" : "行情源降级，需关注时效", status.quoteRealtime ? "good" : "watch"],
-    ["行情接口", quote?.tradeTime ? `最新 ${quoteTime}` : "等待行情刷新", quote?.tradeTime ? "good" : "watch"],
-    ["财报索引", `${Number(status.documentCount || 0)} 份文档 / ${Number(status.chunkCount || 0)} 段证据`, Number(status.chunkCount || 0) > 0 ? "good" : "watch"],
-    ["指标任务", `${Number(status.metricRunCount || 0)} 次计算 / ${metricTime}`, Number(status.metricRunCount || 0) > 0 ? "good" : "watch"],
-    ["规则兜底", aiAnalysis ? (aiAnalysis.aiGenerated ? "本地模型输出，规则兜底未启用" : "Ollama 不可用，已启用规则兜底") : "等待 AI 报告生成", aiAnalysis?.aiGenerated ? "good" : "watch"],
-    ["报告时间", Number(status.aiReportCount || 0) > 0 ? `${Number(status.aiReportCount || 0)} 份 / ${aiTime}` : "暂无报告", Number(status.aiReportCount || 0) > 0 ? "good" : "watch"],
-    ["工作流", workflow, workflow === "SUCCEEDED" ? "good" : workflow === "FAILED" ? "risk" : "watch"]
-  ];
-  const qualityGrade = Number(status.chunkCount || 0) > 0 && Number(status.metricRunCount || 0) > 0
-    ? (status.quoteRealtime ? "A-" : "B+")
-    : "B";
-  $("dataQualitySummary").textContent = `数据可信度 ${qualityGrade} / ${status.quoteRealtime ? "行情实时" : "行情降级"} / ${aiAnalysis?.aiGenerated ? "模型输出" : "规则兜底"}`;
-  $("dataQualityPanel").innerHTML = qualities.map(([label, value, level]) => qualityItem(label, value, level)).join("")
-    + (status.latestWorkflowError ? `<div class="empty-note">${escapeHtml(status.latestWorkflowError)}</div>` : "");
-}
-
-function renderReportMeta(aiAnalysis, status, metrics, risks, quote) {
-  const rating = aiAnalysis?.rating || "待生成";
-  const confidence = aiAnalysis?.confidence != null ? `${aiAnalysis.confidence}%` : "--";
-  $("aiBriefMeta").textContent = aiAnalysis ? formatDateTime(aiAnalysis.generatedAt) || "Latest" : "Pending";
-  $("aiBriefPanel").innerHTML = aiAnalysis ? `
-    <div class="brief-rating">
-      <span>综合判断</span>
-      <strong>${escapeHtml(rating)}</strong>
-    </div>
-    <p>${escapeHtml(aiAnalysis.summary || "AI 已生成结构化观点，但摘要内容暂为空。")}</p>
-    <dl class="brief-facts">
-      <div><dt>置信度</dt><dd>${escapeHtml(confidence)}</dd></div>
-      <div><dt>当前建议</dt><dd>${escapeHtml(recommendationText(rating))}</dd></div>
-      <div><dt>核心原因</dt><dd>${escapeHtml(firstPoint(aiAnalysis.positivePoints) || "等待更多财务指标与公告证据。")}</dd></div>
-    </dl>
-  ` : `
-    <div class="brief-rating pending">
-      <span>综合判断</span>
-      <strong>待生成</strong>
-    </div>
-    <p>点击“生成 AI 研报”后，系统会结合实时行情、财务指标、风险规则和证据索引输出机构化简报。</p>
-  `;
-
-  $("riskSignalPanel").innerHTML = riskSignalItems(risks, quote, aiAnalysis).join("");
 }
 
 function renderAnalysis(metrics, risks, quote, aiAnalysis = null) {
   const checks = metrics.length ? healthChecks(metrics) : [];
   if (!metrics.length) {
     const displayRating = aiAnalysis?.rating || "等待分析";
-  $("ratingBadge").textContent = displayRating;
-  $("ratingBadge").className = `rating ${ratingClass(displayRating)}`;
-  $("summaryRatingBadge").textContent = `AI评级 ${displayRating}`;
-  $("summaryRatingBadge").className = `rating ${ratingClass(displayRating)}`;
-  $("analysisConclusion").textContent = aiAnalysis?.summary || "点击“生成 AI 研报”后，系统会回答这只股票能不能看、为什么、风险在哪里、证据来自哪里。";
+    $("ratingBadge").textContent = displayRating;
+    $("ratingBadge").className = `rating ${ratingClass(displayRating)}`;
+    $("analysisConclusion").textContent = aiAnalysis?.summary || "点击“生成分析”后，系统会回答这只股票能不能看、为什么、风险在哪里、证据来自哪里。";
     $("positivePoints").innerHTML = decisionList(aiAnalysis?.positivePoints, "暂无核心理由。");
     $("negativePoints").innerHTML = decisionList(aiAnalysis?.riskPoints, "暂无主要风险。");
-    $("confidenceScore").textContent = aiAnalysis?.confidence != null ? `${aiAnalysis.confidence}%` : "--";
+    $("confidenceScore").textContent = aiAnalysis?.confidence != null ? `${aiAnalysis.confidence}%` : "置信度待生成";
+    $("confidenceScore").classList.toggle("pending", aiAnalysis?.confidence == null);
+    $("confidenceScore").hidden = aiAnalysis?.confidence == null;
     $("analysisUpdatedAt").textContent = aiAnalysis ? analysisMeta(aiAnalysis) : "暂无数据";
+    $("analysisUpdatedAt").hidden = !aiAnalysis;
     $("healthList").innerHTML = emptyHealth();
     return;
   }
@@ -220,24 +295,25 @@ function renderAnalysis(metrics, risks, quote, aiAnalysis = null) {
 
   $("ratingBadge").textContent = displayRating;
   $("ratingBadge").className = `rating ${ratingClass(displayRating)}`;
-  $("summaryRatingBadge").textContent = `AI评级 ${displayRating}`;
-  $("summaryRatingBadge").className = `rating ${ratingClass(displayRating)}`;
   $("analysisConclusion").textContent = aiAnalysis?.summary || conclusionText(company, rating, checks, risks, quote);
   $("positivePoints").innerHTML = decisionList(aiAnalysis?.positivePoints, positiveText(checks));
   $("negativePoints").innerHTML = decisionList(aiAnalysis?.riskPoints, negativeText(checks, risks, quote));
   $("confidenceScore").textContent = `${displayConfidence}%`;
+  $("confidenceScore").classList.remove("pending");
+  $("confidenceScore").hidden = false;
   $("analysisUpdatedAt").textContent = aiAnalysis ? analysisMeta(aiAnalysis) : quote?.tradeDate && quote?.tradeTime ? `${quote.tradeDate} ${quote.tradeTime}` : "基于当前数据";
+  $("analysisUpdatedAt").hidden = false;
   $("healthList").innerHTML = checks.map(healthCard).join("");
 }
 
-function renderChart(candles, quote, aiAnalysis) {
+function renderChart(candles) {
   const canvas = $("priceChart");
   const tooltip = $("chartTooltip");
   const ctx = canvas.getContext("2d");
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const width = Math.max(320, Math.floor(rect.width));
-  const height = 520;
+  const height = width < 640 ? 280 : 360;
   canvas.width = Math.floor(width * dpr);
   canvas.height = Math.floor(height * dpr);
   canvas.style.height = `${height}px`;
@@ -254,11 +330,7 @@ function renderChart(candles, quote, aiAnalysis) {
 
   const data = candles.map(candle => ({
     date: candle.tradeDate,
-    open: numeric(candle.open),
     close: numeric(candle.close),
-    high: numeric(candle.high),
-    low: numeric(candle.low),
-    volume: numeric(candle.volume),
     changePercent: numeric(candle.changePercent)
   })).filter(candle => candle.close > 0);
 
@@ -267,38 +339,24 @@ function renderChart(candles, quote, aiAnalysis) {
     return;
   }
 
-  const ma5 = movingAverage(data, 5);
-  const ma20 = movingAverage(data, 20);
-  const ma60 = movingAverage(data, 60);
-  const priceValues = [
-    ...data.flatMap(candle => [candle.high, candle.low]),
-    ...ma5.filter(Boolean),
-    ...ma20.filter(Boolean),
-    ...ma60.filter(Boolean)
-  ];
-  const minPrice = Math.min(...priceValues);
-  const maxPrice = Math.max(...priceValues);
-  const maxVolume = Math.max(...data.map(candle => candle.volume), 1);
-  const pad = { left: 54, right: 62, top: 24, bottom: 92 };
-  const volumeHeight = 72;
-  const priceBottom = height - pad.bottom - volumeHeight;
+  const closes = data.map(candle => candle.close);
+  const rawMin = Math.min(...closes);
+  const rawMax = Math.max(...closes);
+  const pricePadding = Math.max((rawMax - rawMin) * 0.08, rawMax * 0.006, 1);
+  const minPrice = rawMin - pricePadding;
+  const maxPrice = rawMax + pricePadding;
+  const pad = { left: 16, right: 64, top: 24, bottom: 38 };
+  const priceBottom = height - pad.bottom;
   const priceHeight = priceBottom - pad.top;
-  const volumeTop = priceBottom + 18;
   const span = Math.max(maxPrice - minPrice, 1);
   const xStep = (width - pad.left - pad.right) / Math.max(data.length - 1, 1);
   const x = index => pad.left + index * xStep;
   const y = value => pad.top + (maxPrice - value) / span * priceHeight;
-  const vy = volume => volumeTop + volumeHeight - volume / maxVolume * volumeHeight;
 
   const drawBaseChart = () => {
     ctx.clearRect(0, 0, width, height);
-    drawGrid(ctx, width, height, pad, priceBottom, volumeTop, minPrice, maxPrice);
-    drawVolume(ctx, data, x, vy, volumeTop, volumeHeight, xStep);
-    drawLine(ctx, data.map(candle => candle.close), x, y, "#252A2E", 1.7);
-    drawLine(ctx, ma5, x, y, "#7F93A7", 1.05);
-    drawLine(ctx, ma20, x, y, "#A98C56", 1.05);
-    drawLine(ctx, ma60, x, y, "#7D9B8A", 1.05);
-    drawAiMarker(ctx, data, aiAnalysis, x, y);
+    drawGrid(ctx, width, pad, priceBottom, minPrice, maxPrice);
+    drawLine(ctx, closes, x, y, cssToken("--chart-line", "#A48754"), 2.2);
   };
 
   drawBaseChart();
@@ -318,7 +376,6 @@ function renderChart(candles, quote, aiAnalysis) {
       <strong>${escapeHtml(candle.date)}</strong>
       <div>收盘：${formatNumber(candle.close)}</div>
       <div>涨跌：<span class="${candle.changePercent >= 0 ? "up" : "down"}">${formatSigned(candle.changePercent)}%</span></div>
-      <div>成交量：${formatVolume(candle.volume)}</div>
     `;
   };
   canvas.onmouseleave = () => {
@@ -328,9 +385,8 @@ function renderChart(candles, quote, aiAnalysis) {
 }
 
 function drawEmptyChart(ctx, width, height) {
-  ctx.fillStyle = "#FFFFFF";
-  ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = "#F0EDE7";
+  ctx.clearRect(0, 0, width, height);
+  ctx.strokeStyle = cssToken("--chart-grid", "rgba(117, 107, 88, .16)");
   ctx.lineWidth = 1;
   for (let i = 0; i < 6; i++) {
     const y = 36 + i * ((height - 92) / 5);
@@ -339,16 +395,16 @@ function drawEmptyChart(ctx, width, height) {
     ctx.lineTo(width - 48, y);
     ctx.stroke();
   }
-  ctx.fillStyle = "#6B7280";
-  ctx.font = "13px Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+  ctx.fillStyle = cssToken("--chart-label", "#6F736F");
+  ctx.font = "13px IBM Plex Sans, PingFang SC, sans-serif";
   ctx.fillText("暂无历史行情数据，等待行情源返回 K 线。", 28, 42);
 }
 
-function drawGrid(ctx, width, height, pad, priceBottom, volumeTop, minPrice, maxPrice) {
-  ctx.strokeStyle = "#F0EDE7";
+function drawGrid(ctx, width, pad, priceBottom, minPrice, maxPrice) {
+  ctx.strokeStyle = cssToken("--chart-grid", "rgba(117, 107, 88, .16)");
   ctx.lineWidth = 1;
-  ctx.fillStyle = "#9CA3AF";
-  ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.fillStyle = cssToken("--chart-label", "#77736B");
+  ctx.font = "10px IBM Plex Mono, SFMono-Regular, Menlo, monospace";
   for (let i = 0; i <= 4; i++) {
     const yLine = pad.top + (priceBottom - pad.top) * i / 4;
     ctx.beginPath();
@@ -358,26 +414,6 @@ function drawGrid(ctx, width, height, pad, priceBottom, volumeTop, minPrice, max
     const label = maxPrice - (maxPrice - minPrice) * i / 4;
     ctx.fillText(formatNumber(label), width - pad.right + 8, yLine + 4);
   }
-  for (let i = 0; i <= 4; i++) {
-    const xLine = pad.left + (width - pad.left - pad.right) * i / 4;
-    ctx.beginPath();
-    ctx.moveTo(xLine, pad.top);
-    ctx.lineTo(xLine, volumeTop + 70);
-    ctx.stroke();
-  }
-  ctx.beginPath();
-  ctx.moveTo(pad.left, volumeTop);
-  ctx.lineTo(width - pad.right, volumeTop);
-  ctx.stroke();
-}
-
-function drawVolume(ctx, data, x, vy, volumeTop, volumeHeight, xStep) {
-  const barWidth = Math.max(2, Math.min(8, xStep * .58));
-  data.forEach((candle, index) => {
-    ctx.fillStyle = candle.close >= candle.open ? "rgba(214, 69, 69, .22)" : "rgba(46, 139, 87, .22)";
-    const top = vy(candle.volume);
-    ctx.fillRect(x(index) - barWidth / 2, top, barWidth, volumeTop + volumeHeight - top);
-  });
 }
 
 function drawLine(ctx, values, x, y, color, width) {
@@ -401,24 +437,9 @@ function drawLine(ctx, values, x, y, color, width) {
   }
 }
 
-function drawAiMarker(ctx, data, aiAnalysis, x, y) {
-  if (!aiAnalysis || !data.length) {
-    return;
-  }
-  const index = data.length - 1;
-  const candle = data[index];
-  ctx.fillStyle = aiAnalysis.rating === "谨慎" ? "#2E8B57" : aiAnalysis.rating === "积极" ? "#D64545" : "#9A7B3F";
-  ctx.beginPath();
-  ctx.arc(x(index), y(candle.close), 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#9A7B3F";
-  ctx.font = "12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
-  ctx.fillText(`AI ${aiAnalysis.rating || "评级"}`, x(index) - 48, y(candle.close) - 12);
-}
-
 function drawCrosshair(ctx, x, top, bottom) {
   ctx.save();
-  ctx.strokeStyle = "rgba(154, 123, 63, .36)";
+  ctx.strokeStyle = cssToken("--chart-crosshair", "rgba(128, 106, 67, .28)");
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
   ctx.moveTo(x, top);
@@ -429,9 +450,8 @@ function drawCrosshair(ctx, x, top, bottom) {
 
 function renderChartStats(candles, quote) {
   const latest = candles?.[candles.length - 1] || null;
-  const high = candles?.length ? Math.max(...candles.map(candle => numeric(candle.high))) : numeric(quote?.highPrice);
-  const low = candles?.length ? Math.min(...candles.map(candle => numeric(candle.low))) : numeric(quote?.lowPrice);
-  const totalVolume = candles?.length ? candles.reduce((sum, candle) => sum + numeric(candle.volume), 0) : 0;
+  const high = candles?.length ? Math.max(...candles.map(candle => numeric(candle.close))) : numeric(quote?.currentPrice);
+  const low = candles?.length ? Math.min(...candles.map(candle => numeric(candle.close))) : numeric(quote?.currentPrice);
   const first = candles?.[0];
   const rangeReturn = first && latest && numeric(first.close) > 0
     ? (numeric(latest.close) - numeric(first.close)) / numeric(first.close) * 100
@@ -439,32 +459,13 @@ function renderChartStats(candles, quote) {
   $("chartStats").innerHTML = [
     ["区间涨跌", `${formatSigned(rangeReturn)}%`, rangeReturn >= 0 ? "up" : "down"],
     ["区间最高", formatNumber(high), "up"],
-    ["区间最低", formatNumber(low), "down"],
-    ["成交量", formatVolume(totalVolume), ""],
-    ["最新日期", latest?.tradeDate || "--", ""]
+    ["区间最低", formatNumber(low), "down"]
   ].map(([label, value, klass]) => `
     <article>
       <span>${label}</span>
       <strong class="${klass}">${escapeHtml(value)}</strong>
     </article>
   `).join("");
-}
-
-function movingAverage(data, windowSize) {
-  return data.map((_, index) => {
-    if (index + 1 < windowSize) {
-      return null;
-    }
-    const slice = data.slice(index + 1 - windowSize, index + 1);
-    return slice.reduce((sum, candle) => sum + candle.close, 0) / windowSize;
-  });
-}
-
-function formatPoints(points) {
-  if (!Array.isArray(points) || !points.length) {
-    return "";
-  }
-  return points.slice(0, 4).join("；") + "。";
 }
 
 function splitPoints(value) {
@@ -484,20 +485,6 @@ function decisionList(points, fallback) {
   return rows.length
     ? `<ol>${rows.map(point => `<li>${escapeHtml(point)}</li>`).join("")}</ol>`
     : `<p>${escapeHtml(fallback)}</p>`;
-}
-
-function firstPoint(points) {
-  return splitPoints(points)[0] || "";
-}
-
-function recommendationText(rating) {
-  if (rating === "积极") {
-    return "可进入重点跟踪，继续验证估值安全边际。";
-  }
-  if (rating === "谨慎") {
-    return "暂以观察为主，等待风险项改善或更强证据确认。";
-  }
-  return "维持中性观察，适合放入候选池持续跟踪。";
 }
 
 function healthChecks(metrics) {
@@ -582,168 +569,57 @@ function negativeText(checks, risks, quote) {
   return all.length ? all.slice(0, 3).join("；") + "。" : "暂未发现明显风险，但仍需关注行业景气度和后续公告变化。";
 }
 
-function riskItems(risks, checks, quote) {
-  const ruleRisks = risks.map(risk =>
-    item(risk.title, risk.explanation, `严重度 ${risk.severity} · ${risk.detectedAt}`)
-  );
-  const metricRisks = checks
-    .filter(check => check.level === "risk")
-    .map(check => item(`${check.title}需关注`, `${check.label} 当前为 ${check.display}，${check.help}`, `${check.fiscalYear} · 指标预警`));
-  const marketRisk = Number(quote?.changePercent || 0) < -1
-    ? [item("短期价格承压", `实时涨跌幅为 ${Number(quote.changePercent).toFixed(2)}%，需要结合成交量和消息面判断是否只是短期波动。`, "实时行情")]
-    : [];
-  const all = [...ruleRisks, ...metricRisks, ...marketRisk];
-  return all.length ? all.join("") : item("暂未发现明显风险", "当前财务指标没有触发高风险规则，建议继续关注后续财报、公告和行业变化。");
-}
-
-function riskItemsFromAi(aiAnalysis) {
-  const risks = Array.isArray(aiAnalysis?.riskPoints) ? aiAnalysis.riskPoints : [];
-  return risks.length
-    ? risks.slice(0, 5).map((risk, index) => item(`AI 风险提示 ${index + 1}`, risk, aiAnalysis.source || "AI 分析")).join("")
-    : item("暂未发现明显风险", "AI 分析暂未给出明确风险点，但仍需结合后续财报、公告和行业变化。");
-}
-
-function item(title, body, meta = "") {
-  return `<div class="item"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(body || "")}</p>${meta ? `<div class="meta">${escapeHtml(meta)}</div>` : ""}</div>`;
-}
-
-function qualityItem(label, value, level = "watch") {
-  return `
-    <div class="quality-item ${level}">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </div>
-  `;
-}
-
-function riskSignalItems(risks, quote, aiAnalysis) {
-  const latest = latestCandles?.[latestCandles.length - 1] || null;
-  const last20 = Array.isArray(latestCandles) ? latestCandles.slice(-20) : [];
-  const avgVolume = last20.length
-    ? last20.reduce((sum, candle) => sum + numeric(candle.volume), 0) / last20.length
-    : 0;
-  const volumeRatio = avgVolume > 0 && latest ? numeric(latest.volume) / avgVolume : 0;
-  const changePercent = numeric(quote?.changePercent);
-  const trendLevel = changePercent <= -3 ? "risk" : changePercent < 0 ? "watch" : "good";
-  const liquidityLevel = volumeRatio >= 1.8 ? "watch" : volumeRatio > 0 ? "good" : "watch";
-  const financialLevel = risks?.length ? "risk" : "good";
-  const evidenceCount = Array.isArray(aiAnalysis?.citations) ? aiAnalysis.citations.length : 0;
-  const newsLevel = evidenceCount ? "good" : "watch";
-  const valuationLevel = aiAnalysis?.rating === "积极" ? "watch" : "watch";
-
-  return [
-    signalItem("趋势风险", trendLevel),
-    signalItem("估值风险", valuationLevel),
-    signalItem("流动性风险", liquidityLevel),
-    signalItem("财务风险", financialLevel),
-    signalItem("舆情风险", newsLevel)
-  ];
-}
-
-function signalItem(label, level) {
-  const levelName = ({ good: "低", watch: "中", risk: "高" })[level] || "中";
-  return `
-    <article class="signal-item ${level}">
-      <div><span>${escapeHtml(label)}</span><em>${escapeHtml(levelName)}</em></div>
-    </article>
-  `;
-}
-
 async function runWorkflow() {
-  $("runWorkflow").disabled = true;
+  const button = $("runWorkflow");
+  button.disabled = true;
+  button.textContent = "正在分析";
+  $("analysisUpdatedAt").hidden = false;
+  $("analysisUpdatedAt").textContent = "正在准备研究任务";
   renderUniverseStatus(`正在分析 ${symbol}...`);
   try {
-    symbol = normalizeSymbol($("symbolInput").value);
-    $("symbolInput").value = symbol;
-    updateCompanyCard(latestQuote);
-    latestResearchTask = await request("/api/research/tasks", {
+    const requestedSymbol = resolveSymbol($("symbolInput").value);
+    if (requestedSymbol !== symbol) {
+      await selectSymbol(requestedSymbol);
+    } else {
+      $("symbolInput").value = symbol;
+    }
+    const task = await request("/api/research/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol })
     });
-    renderResearchDesk();
+    await waitForResearchTask(task);
     await refresh();
-    await search();
-  } finally {
-    $("runWorkflow").disabled = false;
-  }
-}
-
-async function runOpenSourceDemo() {
-  const button = $("runDemo");
-  button.disabled = true;
-  button.textContent = "Running...";
-  renderUniverseStatus("正在执行完整 Demo...");
-  try {
-    symbol = normalizeSymbol($("symbolInput").value || "600519");
-    $("symbolInput").value = symbol;
-    const steps = [
-      ["初始化样例数据", () => request("/api/ingestion/demo", { method: "POST" })],
-      ["重算财务指标", () => request(`/api/metrics/recalculate/${symbol}`, { method: "POST" })],
-      ["重建证据索引", () => request(`/api/document-index/${symbol}/rebuild`, { method: "POST" })],
-      ["构建公司画像", () => request(`/api/intelligence/${symbol}/rebuild`, { method: "POST" })],
-      ["生成 AI 研报", () => request("/api/research/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol })
-      })],
-      ["运行 RAG 评测", () => request("/api/evaluations/rag/run", { method: "POST" })]
-    ];
-    for (const [label, action] of steps) {
-      renderUniverseStatus(`Demo: ${label}...`);
-      const result = await action();
-      if (label === "生成 AI 研报") {
-        latestResearchTask = result;
-      }
-      if (label === "运行 RAG 评测") {
-        latestEvaluationRun = result;
-      }
-    }
-    await refresh();
-    await search();
-    await refreshOpenSourceProof(false);
-    renderUniverseStatus("Demo 已完成，可以查看报告、证据链和评测结果");
+    $("analysisUpdatedAt").textContent = `分析已更新，${formatDateTime(latestAiAnalysis?.generatedAt) || "刚刚"}`;
   } catch (error) {
-    renderUniverseStatus(`Demo 失败：${error.message}`);
+    $("analysisUpdatedAt").textContent = `分析失败：${error.message}`;
   } finally {
     button.disabled = false;
-    button.textContent = "Run Demo";
+    button.textContent = "生成分析";
   }
 }
 
-async function syncUniverse() {
-  $("syncUniverse").disabled = true;
-  renderUniverseStatus("正在同步股票池...");
-  try {
-    const result = await request("/api/companies/sync-a-shares", { method: "POST" });
-    companies = await request("/api/companies?limit=200").catch(() => companies);
-    companyTotal = Number(result.companyCount || companies.length || 0);
-    renderUniverseStatus(`股票池 ${result.companyCount} 只 · 本次保存 ${result.saved} 只`);
-    renderStockList();
-    await suggestStocks($("symbolInput").value);
-  } catch (error) {
-    renderUniverseStatus(`同步失败：${error.message}`);
-  } finally {
-    $("syncUniverse").disabled = false;
+async function waitForResearchTask(task) {
+  let currentTask = task;
+  const terminalStates = new Set(["SUCCEEDED", "FAILED", "DEAD_LETTER"]);
+  for (let attempt = 0; attempt < 45; attempt += 1) {
+    const status = String(currentTask?.status || "");
+    if (terminalStates.has(status)) {
+      if (status !== "SUCCEEDED") {
+        throw new Error(currentTask?.errorMessage || "分析任务未能完成");
+      }
+      return currentTask;
+    }
+    const stage = String(currentTask?.stage || "处理中").replaceAll("_", " ").toLowerCase();
+    $("analysisUpdatedAt").textContent = `分析进行中：${stage}`;
+    await delay(900);
+    currentTask = await request(`/api/research/tasks/${encodeURIComponent(currentTask.taskId)}`);
   }
+  throw new Error("分析仍在后台运行，请稍后查看");
 }
 
-async function batchAnalyze() {
-  $("batchAnalyze").disabled = true;
-  renderUniverseStatus("正在提交批量分析...");
-  try {
-    const result = await request("/api/companies/batch-analysis", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ limit: 20 })
-    });
-    renderUniverseStatus(`已提交 ${result.submitted} 只，失败 ${result.failed} 只`);
-    await refresh();
-  } catch (error) {
-    renderUniverseStatus(`批量分析失败：${error.message}`);
-  } finally {
-    $("batchAnalyze").disabled = false;
-  }
+function delay(milliseconds) {
+  return new Promise(resolve => window.setTimeout(resolve, milliseconds));
 }
 
 async function suggestStocks(query) {
@@ -752,150 +628,86 @@ async function suggestStocks(query) {
     ? await request(`/api/companies/search?q=${encodeURIComponent(normalized)}&limit=12`).catch(() => [])
     : companies.slice(0, 12);
   $("stockSuggestions").innerHTML = suggestions.map(company =>
-    `<option value="${escapeHtml(company.symbol)}">${escapeHtml(company.name)} · ${escapeHtml(company.exchange)} · ${escapeHtml(company.industry)}</option>`
+    `<option value="${escapeHtml(company.symbol)}">${escapeHtml(company.name)}，${escapeHtml(company.exchange)}，${escapeHtml(company.industry)}</option>`
   ).join("");
 }
 
 async function search() {
-  const query = encodeURIComponent($("searchInput").value);
-  const results = await request(`/api/document-index/${symbol}/search?q=${query}`).catch(() => []);
-  const visible = results.slice(0, 3);
-  $("retrievalList").innerHTML = results.map(hit =>
-    item(hit.title, hit.text, `${hit.section} · 相关度 ${Number(hit.score).toFixed(2)}`)
-  ).join("") || item("暂无证据", "点击生成 AI 研报后，系统会建立该股票的公开财报和公告证据索引。");
-  $("evidencePreviewPanel").innerHTML = visible.map(hit => `
-    <article class="evidence-mini">
-      <strong>${escapeHtml(hit.title)}</strong>
-      <p>${escapeHtml(hit.text)}</p>
-      <span>${escapeHtml(hit.section)} · ${Number(hit.score).toFixed(2)}</span>
-    </article>
-  `).join("") || `<p>暂无证据预览。生成 AI 研报后，这里会显示最相关的 3 条证据。</p>`;
-}
-
-async function refreshOpenSourceProof(runEvaluation = false) {
-  const [workflowSummary, evaluationRun] = await Promise.all([
-    request("/api/workflows/summary").catch(() => latestWorkflowSummary),
-    runEvaluation
-      ? request("/api/evaluations/rag/run", { method: "POST" }).catch(() => latestEvaluationRun)
-      : Promise.resolve(latestEvaluationRun)
-  ]);
-  latestWorkflowSummary = workflowSummary;
-  latestEvaluationRun = evaluationRun;
-  renderOpenSourceProof();
-}
-
-function renderResearchDesk() {
-  const task = latestResearchTask;
-  const trace = latestReportTrace;
-  const stages = [
-    "CREATED",
-    "INGESTING_DATA",
-    "METRIC_CALCULATING",
-    "DOCUMENT_INDEXING",
-    "INTELLIGENCE_BUILDING",
-    "AI_ANALYZING",
-    "SUCCEEDED"
-  ];
-  const activeStage = task?.stage || (latestAiAnalysis ? "SUCCEEDED" : "CREATED");
-  const activeIndex = Math.max(0, stages.indexOf(activeStage));
-  $("researchTaskStatus").textContent = task ? task.status : (latestAiAnalysis ? "SUCCEEDED" : "Ready");
-  $("researchTaskStatus").className = `task-status ${taskStatusClass(task?.status || (latestAiAnalysis ? "SUCCEEDED" : "CREATED"))}`;
-  $("researchTimeline").innerHTML = stages.map((stage, index) => `
-    <span class="${index <= activeIndex ? "active" : ""} ${stage === activeStage ? "current" : ""}">
-      ${escapeHtml(stageLabel(stage))}
-    </span>
-  `).join("");
-  $("researchTaskMeta").innerHTML = [
-    ["Task ID", task?.taskId || "--"],
-    ["Idempotency", compactHash(task?.idempotencyKey)],
-    ["Fencing Token", task?.fencingToken ?? "--"],
-    ["Attempts", task?.attempts ?? "--"],
-    ["Lease Owner", task?.leaseOwner || "released"],
-    ["Updated", formatDateTime(task?.updatedAt) || "--"]
-  ].map(([label, value]) => `
-    <div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>
-  `).join("");
-
-  $("reportTraceStatus").textContent = trace ? `v${trace.reportVersion}` : "Pending";
-  $("reportTraceStatus").className = `task-status ${trace ? "success" : "neutral"}`;
-  $("reportTrustPanel").innerHTML = [
-    ["Report ID", compactHash(trace?.reportId || latestAiAnalysis?.reportId)],
-    ["Snapshot", compactHash(trace?.dataSnapshotHash || latestAiAnalysis?.dataSnapshotHash)],
-    ["Cache Hit", String(trace?.cacheHit ?? latestAiAnalysis?.cacheHit ?? false)],
-    ["Model", trace?.model || latestAiAnalysis?.model || "--"],
-    ["Evidence", `${trace?.evidence?.length || latestAiAnalysis?.citations?.length || 0} linked`],
-    ["Generated", formatDateTime(trace?.generatedAt || latestAiAnalysis?.generatedAt) || "--"]
-  ].map(([label, value]) => `
-    <article><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>
-  `).join("");
-  const evidence = trace?.evidence || [];
-  $("reportEvidenceTrace").innerHTML = evidence.length
-    ? evidence.slice(0, 4).map(item => `
-      <article>
-        <strong>${escapeHtml(item.title)}</strong>
-        <p>${escapeHtml(item.text)}</p>
-        <span>${escapeHtml(item.section)} · ${escapeHtml(item.channel)} · ${Number(item.score).toFixed(2)}</span>
-      </article>
-    `).join("")
-    : `<div class="empty-note">生成报告后，这里会展示报告结论绑定的证据片段。</div>`;
-}
-
-function taskStatusClass(status) {
-  if (status === "SUCCEEDED") {
-    return "success";
+  const button = $("searchButton");
+  const question = $("searchInput").value.trim();
+  if (!question) {
+    $("questionStatus").textContent = "请先输入一个研究问题。";
+    $("searchInput").focus();
+    return;
   }
-  if (status === "FAILED" || status === "DEAD_LETTER") {
-    return "danger";
+  button.disabled = true;
+  button.textContent = "检索中";
+  $("questionStatus").textContent = "正在检索财报与公告…";
+  $("questionAnswer").hidden = true;
+  $("sourcePanel").hidden = true;
+  $("retrievalList").innerHTML = "";
+  try {
+    const query = encodeURIComponent(question);
+    const endpoint = evidenceScope === "global"
+      ? `/api/document-index/search?q=${query}&limit=6`
+      : `/api/document-index/${symbol}/search?q=${query}&limit=6`;
+    const results = await request(endpoint);
+    const visible = results.slice(0, 6);
+    $("questionStatus").textContent = visible.length
+      ? `已找到 ${visible.length} 条${evidenceScope === "global" ? "全市场" : "当前公司"}来源`
+      : "暂未找到与问题直接相关的来源";
+    $("questionAnswer").hidden = false;
+    $("sourcePanel").hidden = !visible.length;
+    $("questionAnswer").innerHTML = visible.length
+      ? `<span>检索摘要</span><p>以下${evidenceScope === "global" ? "全市场" : escapeHtml($("evidenceCompanyName").textContent)}公开资料与“${escapeHtml(question)}”最相关。</p>`
+      : `<span>暂无匹配</span><p>请先生成分析以建立证据索引，或换一个更具体的问题。</p>`;
+    $("retrievalList").innerHTML = visible.map((hit, index) => {
+      const section = String(hit.section || "公开资料").split(" / ")[0];
+      const sourceMeta = [documentTypeName(hit.documentType), hit.publishedAt, section].filter(Boolean).join("，");
+      return `
+        <details class="source-result">
+          <summary>
+            <span class="source-index">${String(index + 1).padStart(2, "0")}</span>
+            <span class="source-title">${escapeHtml(hit.title)}</span>
+            <span class="source-score">${escapeHtml(hit.publishedAt || "")}</span>
+          </summary>
+          <div class="source-detail">
+            <p>${escapeHtml(hit.text || "")}</p>
+            <span>${escapeHtml(sourceMeta)}</span>
+          </div>
+        </details>
+      `;
+    }).join("");
+  } catch (error) {
+    $("questionStatus").textContent = "检索失败，请稍后重试。";
+    $("questionAnswer").hidden = false;
+    $("questionAnswer").innerHTML = `<span>连接失败</span><p>${escapeHtml(error.message)}</p>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "检索";
   }
-  if (status === "RUNNING" || status === "RETRYING") {
-    return "running";
-  }
-  return "neutral";
-}
-
-function stageLabel(stage) {
-  return ({
-    CREATED: "创建",
-    INGESTING_DATA: "采集",
-    METRIC_CALCULATING: "指标",
-    DOCUMENT_INDEXING: "索引",
-    INTELLIGENCE_BUILDING: "画像",
-    AI_ANALYZING: "研报",
-    SUCCEEDED: "完成"
-  })[stage] || stage;
-}
-
-function renderOpenSourceProof() {
-  const totalTasks = Number(latestWorkflowSummary?.total || 0);
-  const failed = Number(latestWorkflowSummary?.failedOrDeadLetter || 0);
-  const running = Number(latestWorkflowSummary?.counts?.RUNNING || 0);
-  const succeeded = Number(latestWorkflowSummary?.counts?.SUCCEEDED || 0);
-  $("workflowProof").textContent = totalTasks ? `${succeeded}/${totalTasks} tasks` : "Ready";
-  $("workflowProofMeta").textContent = totalTasks
-    ? `${running} running · ${failed} failed/dead-letter · stage distribution exposed by /api/workflows/summary`
-    : "状态机、幂等任务、Redis Lua Single-flight 和超时恢复已接入。";
-
-  const avgScore = latestEvaluationRun?.averageScore;
-  const passed = latestEvaluationRun?.passedCases;
-  const totalCases = latestEvaluationRun?.totalCases;
-  $("evaluationProof").textContent = avgScore != null ? `${Math.round(avgScore * 100)} / 100` : "Measurable";
-  $("evaluationProofMeta").textContent = avgScore != null
-    ? `${passed}/${totalCases} cases passed · RAG hit rate, evidence coverage, hallucination risk and consistency scored`
-    : "证据覆盖、幻觉风险、结论一致性和置信度校准会在 Demo 后展示。";
-
-  const reportVersion = latestAiAnalysis?.reportVersion;
-  const snapshotHash = latestAiAnalysis?.dataSnapshotHash;
-  $("cacheProof").textContent = reportVersion ? `v${reportVersion}` : "Snapshot-bound";
-  $("cacheProofMeta").textContent = snapshotHash
-    ? `snapshot ${snapshotHash.slice(0, 10)}... · cacheHit=${latestAiAnalysis.cacheHit}`
-    : "dataSnapshotHash + contextHash + reportVersion 防止复用过期结论。";
 }
 
 async function selectSymbol(nextSymbol) {
-  symbol = normalizeSymbol(nextSymbol);
+  const input = $("symbolInput");
+  let next;
+  try {
+    next = resolveSymbol(nextSymbol);
+  } catch (error) {
+    input.setCustomValidity(error.message);
+    input.reportValidity();
+    input.focus();
+    return false;
+  }
+  input.setCustomValidity("");
+  symbol = next;
   $("symbolInput").value = symbol;
   await refresh();
-  await search();
+  $("questionStatus").textContent = "";
+  $("questionAnswer").hidden = true;
+  $("sourcePanel").hidden = true;
+  $("retrievalList").innerHTML = "";
+  return true;
 }
 
 function ratingClass(rating) {
@@ -903,7 +715,7 @@ function ratingClass(rating) {
 }
 
 function analysisMeta(aiAnalysis) {
-  return `${aiAnalysis.aiGenerated ? "Ollama 本地模型" : "规则兜底"} · ${aiAnalysis.cacheHit ? "缓存命中" : "新报告"} · ${formatDateTime(aiAnalysis.generatedAt) || aiAnalysis.source || "AI 分析"}`;
+  return `${aiAnalysis.aiGenerated ? "Ollama 本地模型" : "规则兜底"}，${aiAnalysis.cacheHit ? "缓存命中" : "新报告"}，${formatDateTime(aiAnalysis.generatedAt) || aiAnalysis.source || "AI 分析"}`;
 }
 
 function statusName(level) {
@@ -913,11 +725,6 @@ function statusName(level) {
     risk: "风险",
     empty: "暂无数据"
   })[level] || level;
-}
-
-function formatPrice(value) {
-  const number = numeric(value);
-  return number > 0 ? number.toFixed(2) : "--";
 }
 
 function formatNumber(value, digits = 2) {
@@ -936,17 +743,6 @@ function formatSigned(value) {
   return `${number > 0 ? "+" : ""}${number.toFixed(2)}`;
 }
 
-function formatVolume(value) {
-  const number = numeric(value);
-  if (number >= 100000000) {
-    return `${(number / 100000000).toFixed(2)}亿`;
-  }
-  if (number >= 10000) {
-    return `${(number / 10000).toFixed(2)}万`;
-  }
-  return number.toLocaleString("zh-CN");
-}
-
 function formatMoney(value) {
   const number = numeric(value);
   if (!number) {
@@ -956,18 +752,50 @@ function formatMoney(value) {
     return `${(number / 100000000).toFixed(2)}亿`;
   }
   if (number >= 10000) {
-    return `${(number / 10000).toFixed(2)}万`;
+    return `${(number / 10000).toFixed(1)}万`;
   }
   return number.toLocaleString("zh-CN");
 }
 
 function formatDateTime(value) {
-  return value ? String(value).replace("T", " ").replace("Z", "") : "";
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value).replace("T", " ").replace(/Z$/, "").replace(/\.\d+$/, "");
+  }
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date).map(part => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-function compactHash(value) {
-  const text = String(value || "");
-  return text ? `${text.slice(0, 12)}${text.length > 12 ? "..." : ""}` : "--";
+function formatEventDate(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10);
+  }
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date).map(part => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function numeric(value) {
@@ -992,31 +820,244 @@ function normalizeSymbol(value) {
   return next;
 }
 
+function resolveSymbol(value) {
+  const query = normalizeSymbol(value);
+  const bareSymbol = query.replace(/\.(SH|SZ|BJ)$/i, "");
+  if (/^\d{6}$/.test(bareSymbol)) {
+    return bareSymbol;
+  }
+  const matchedCompany = companies.find(company => {
+    const companySymbol = String(company.symbol || "").toUpperCase();
+    const companyName = String(company.name || "").trim().toUpperCase();
+    return companySymbol === query || companyName === query;
+  });
+  if (matchedCompany?.symbol) {
+    return String(matchedCompany.symbol);
+  }
+  throw new Error("请输入 6 位股票代码，或从建议中选择公司");
+}
+
+function documentTypeName(value) {
+  return ({
+    ANNUAL_REPORT: "年度报告",
+    QUARTERLY_REPORT: "季度报告",
+    ANNOUNCEMENT: "公司公告",
+    NEWS: "公开资讯",
+    METRIC: "财务指标"
+  })[value] || "公开资料";
+}
+
+function marketSourceName(value) {
+  return ({
+    SINA_QUOTE: "新浪行情",
+    TENCENT_QUOTE: "腾讯行情",
+    EASTMONEY_QUOTE: "东方财富",
+    LOCAL_FALLBACK: "本地快照",
+    LOCAL_ERROR: "本地快照"
+  })[value] || value || "待同步";
+}
+
 $("runWorkflow").addEventListener("click", runWorkflow);
-$("runDemo").addEventListener("click", runOpenSourceDemo);
 $("searchButton").addEventListener("click", search);
-$("openEvidence").addEventListener("click", () => {
-  $("evidence").scrollIntoView({ behavior: "smooth", block: "start" });
+$("searchInput").addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    search();
+  }
 });
+$("symbolSearchButton").addEventListener("click", () => selectSymbol($("symbolInput").value));
+$("openAnalysisEvidence").addEventListener("click", () => setWorkspace("evidence"));
+$("addCurrentToWatchlist").addEventListener("click", addCurrentCompanyToWatchlist);
 $("symbolInput").addEventListener("keydown", event => {
   if (event.key === "Enter") {
-    runWorkflow();
+    event.preventDefault();
+    selectSymbol(event.currentTarget.value);
   }
 });
 $("symbolInput").addEventListener("input", event => {
+  event.currentTarget.setCustomValidity("");
   clearTimeout(suggestionTimer);
   suggestionTimer = setTimeout(() => suggestStocks(event.target.value), 180);
 });
 document.querySelectorAll(".range-tab").forEach(button => {
   button.addEventListener("click", async () => {
-    document.querySelectorAll(".range-tab").forEach(item => item.classList.remove("active"));
-    button.classList.add("active");
+    document.querySelectorAll(".range-tab").forEach(item => {
+      const selected = item === button;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-pressed", String(selected));
+    });
     chartLimit = Number(button.dataset.limit || 120);
-    await refresh();
+    await refreshChart();
   });
 });
-window.addEventListener("resize", () => renderChart(latestCandles, latestQuote, latestAiAnalysis));
 
-refresh().then(() => Promise.all([search(), suggestStocks(symbol), refreshOpenSourceProof(false)])).catch(error => {
+async function refreshChart() {
+  const requestedSymbol = symbol;
+  const requestedLimit = chartLimit;
+  const requestGeneration = ++chartGeneration;
+  try {
+    const candles = await request(`/api/market/history/${requestedSymbol}?limit=${requestedLimit}`);
+    if (
+      requestGeneration !== chartGeneration
+      || requestedSymbol !== symbol
+      || requestedLimit !== chartLimit
+    ) {
+      return;
+    }
+    latestCandles = Array.isArray(candles) ? candles : [];
+    renderChart(latestCandles);
+    renderChartStats(latestCandles, latestQuote);
+  } catch {
+    if (requestGeneration === chartGeneration) {
+      $("chartStats").innerHTML = '<p class="chart-error">价格历史暂时无法加载</p>';
+      renderChart([]);
+    }
+  }
+}
+
+const productNav = $("productNav");
+const mobileMenuButton = $("mobileMenuButton");
+const navBackdrop = $("navBackdrop");
+const workspaceLabels = {
+  company: "公司研究",
+  analysis: "AI 分析",
+  evidence: "证据来源",
+  events: "近期事件",
+  watchlist: "关注列表"
+};
+const workspaceViews = Object.fromEntries(
+  [...document.querySelectorAll("[data-workspace-view]")].map(view => [view.dataset.workspaceView, view])
+);
+
+function setNavigationOpen(open) {
+  productNav.classList.toggle("open", open);
+  mobileMenuButton.setAttribute("aria-expanded", String(open));
+  mobileMenuButton.setAttribute("aria-label", open ? "关闭导航" : "打开导航");
+  navBackdrop.hidden = !open;
+  document.body.classList.toggle("navigation-open", open);
+}
+
+mobileMenuButton.addEventListener("click", () => {
+  setNavigationOpen(!productNav.classList.contains("open"));
+});
+
+navBackdrop.addEventListener("click", () => setNavigationOpen(false));
+
+function setWorkspace(view, updateHistory = true) {
+  const nextView = workspaceViews[view] ? view : "company";
+  Object.entries(workspaceViews).forEach(([name, element]) => {
+    element.hidden = name !== nextView;
+  });
+  document.body.dataset.workspace = nextView;
+  $("workspaceLabel").textContent = workspaceLabels[nextView];
+  document.querySelectorAll(".product-link").forEach(item => {
+    const active = item.dataset.workspace === nextView;
+    item.classList.toggle("active", active);
+    if (active) {
+      item.setAttribute("aria-current", "page");
+    } else {
+      item.removeAttribute("aria-current");
+    }
+  });
+  setNavigationOpen(false);
+  if (updateHistory) {
+    const target = workspaceViews[nextView]?.id;
+    if (target && window.location.hash !== `#${target}`) {
+      window.history.pushState({ workspace: nextView }, "", `#${target}`);
+    }
+  }
+  window.scrollTo({ top: 0, behavior: updateHistory ? "smooth" : "auto" });
+  if (nextView === "company") {
+    requestAnimationFrame(() => renderChart(latestCandles));
+  }
+  if (nextView === "evidence") {
+    $("evidenceScopeLabel").textContent = evidenceScope === "global"
+      ? "全市场"
+      : `${$("evidenceCompanyName").textContent} ${$("evidenceCompanySymbol").textContent}`;
+    requestAnimationFrame(() => $("searchInput").focus());
+  }
+}
+
+$("newResearchButton").addEventListener("click", () => {
+  setWorkspace("company");
+  $("symbolInput").focus();
+});
+
+document.querySelectorAll(".product-link").forEach(link => {
+  link.addEventListener("click", event => {
+    event.preventDefault();
+    setWorkspace(link.dataset.workspace || "company");
+  });
+});
+
+document.querySelectorAll("[data-workspace-link]").forEach(link => {
+  link.addEventListener("click", event => {
+    event.preventDefault();
+    setWorkspace(link.dataset.workspaceLink || "company");
+  });
+});
+
+document.querySelectorAll(".scope-tab").forEach(button => {
+  button.addEventListener("click", () => {
+    evidenceScope = button.dataset.scope === "global" ? "global" : "company";
+    document.querySelectorAll(".scope-tab").forEach(item => {
+      const selected = item === button;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-pressed", String(selected));
+    });
+    $("evidenceScopeLabel").textContent = evidenceScope === "global"
+      ? "全市场"
+      : `${$("evidenceCompanyName").textContent} ${$("evidenceCompanySymbol").textContent}`;
+    $("questionStatus").textContent = "";
+    $("questionAnswer").hidden = true;
+    $("sourcePanel").hidden = true;
+    $("retrievalList").innerHTML = "";
+  });
+});
+
+document.querySelectorAll(".query-suggestions button").forEach(button => {
+  button.addEventListener("click", () => {
+    $("searchInput").value = button.textContent.trim();
+    search();
+  });
+});
+
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    setNavigationOpen(false);
+  }
+  if (event.key === "/" && document.activeElement?.tagName !== "INPUT") {
+    event.preventDefault();
+    $("symbolInput").focus();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 900 && productNav.classList.contains("open")) {
+    setNavigationOpen(false);
+  }
+  if (document.body.dataset.workspace === "company") {
+    renderChart(latestCandles);
+  }
+});
+
+function workspaceFromHash() {
+  return document.querySelector(`.product-link[href="${window.location.hash}"]`)?.dataset.workspace || "company";
+}
+
+function syncWorkspaceFromHash() {
+  const nextWorkspace = workspaceFromHash();
+  if (document.body.dataset.workspace !== nextWorkspace) {
+    setWorkspace(nextWorkspace, false);
+  }
+}
+
+window.addEventListener("popstate", syncWorkspaceFromHash);
+window.addEventListener("hashchange", syncWorkspaceFromHash);
+
+const initialWorkspace = workspaceFromHash();
+setWorkspace(initialWorkspace, false);
+
+refresh().then(() => suggestStocks(symbol)).catch(error => {
   $("analysisConclusion").textContent = `后端服务未就绪：${error.message}`;
 });

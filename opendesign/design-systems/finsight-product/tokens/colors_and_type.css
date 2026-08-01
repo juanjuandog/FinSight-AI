@@ -1,0 +1,60 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap");
+
+:root {
+  --fg-1: #2e302f;
+  --fg-2: #626762;
+  --fg-3: #77736b;
+  --bg-1: #f7f5ef;
+  --bg-2: #fcfbf8;
+  --bg-3: #f3efe6;
+  --accent-1: #806a43;
+  --accent-2: #ece1c8;
+  --negative: #a34a46;
+  --positive: #577c70;
+  --comparison: #587681;
+  --warning: #806a43;
+  --line-1: rgba(117, 107, 88, 0.28);
+  --line-2: rgba(117, 107, 88, 0.17);
+
+  --font-display: "IBM Plex Sans", "PingFang SC", sans-serif;
+  --font-ui: "IBM Plex Sans", "PingFang SC", sans-serif;
+  --font-data: "IBM Plex Mono", monospace;
+
+  --size-1: 0.75rem;
+  --size-2: 0.8125rem;
+  --size-3: 0.9375rem;
+  --size-4: 1rem;
+  --size-5: 1.25rem;
+  --size-6: 1.75rem;
+  --size-7: clamp(2rem, 4vw, 3.5rem);
+
+  --surface-primary: var(--bg-2);
+  --surface-secondary: var(--bg-1);
+  --surface-active: rgba(236, 225, 200, 0.62);
+  --text-primary: var(--fg-1);
+  --text-secondary: var(--fg-2);
+  --text-muted: var(--fg-3);
+  --border-subtle: var(--line-2);
+  --border-default: var(--line-1);
+  --action-primary: var(--accent-1);
+  --action-primary-soft: var(--accent-2);
+
+  --h1: 600 var(--size-7) / 1.02 var(--font-display);
+  --h2: 600 var(--size-6) / 1.15 var(--font-display);
+  --h3: 600 var(--size-5) / 1.25 var(--font-ui);
+  --body: 400 var(--size-3) / 1.6 var(--font-ui);
+  --caption: 500 var(--size-1) / 1.4 var(--font-ui);
+  --data: 500 var(--size-2) / 1.4 var(--font-data);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --shadow-float: 0 24px 70px rgba(74, 63, 46, 0.16);
+}

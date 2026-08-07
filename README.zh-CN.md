@@ -90,7 +90,7 @@ docker compose up -d --build
 ./scripts/quick-demo.sh
 ```
 
-默认 Demo 不需要 API Key。Ollama 是可选项，本地模型不可用时会使用确定性降级保持主流程可运行。完整 Compose 栈建议预留约 8 GB 可用内存。
+默认 Demo 不需要 API Key。Ollama 是默认本地 provider，Sidecar 同时预留了 OpenAI-compatible API 和 Anthropic 适配器。选中的模型不可用或未配置凭证时，会使用确定性降级保持主流程可运行。完整 Compose 栈建议预留约 8 GB 可用内存。
 
 | 模式 | 适合场景 | 运行环境 |
 | --- | --- | --- |
@@ -112,7 +112,10 @@ flowchart LR
     API --> Retrieval["全文 + Vector + RRF"]
     Retrieval --> DB
     Retrieval --> Sidecar["FastAPI: Embed · Rerank · Generate"]
-    Sidecar -. 可选 .-> Ollama["Ollama"]
+    Sidecar --> Providers["模型 Provider 适配层"]
+    Providers -. 默认 .-> Ollama["Ollama"]
+    Providers -. 可选 .-> OpenAI["OpenAI-compatible"]
+    Providers -. 可选 .-> Anthropic["Anthropic"]
     Sidecar --> Report["快照绑定报告"]
     Report --> DB
     API --> Eval["RAG Evaluation"]
@@ -131,7 +134,7 @@ Spring Boot 服务负责领域状态和任务编排，Python Sidecar 负责面�
 | 任务工作流 | RabbitMQ、任务状态机、重试和死信恢复 |
 | 分布式协调 | Redis、Lua Lease、Fencing Token、快照感知缓存 |
 | 检索 | PostgreSQL JSONB、全文检索、pgvector、RRF、Rerank |
-| AI 运行时 | FastAPI、Sentence Embedding、Cross-encoder Rerank、可选 Ollama |
+| AI 运行时 | FastAPI、Sentence Embedding、Cross-encoder Rerank、Ollama/OpenAI-compatible/Anthropic 适配器 |
 | 产品前端 | 由 Spring Boot 托管的响应式 HTML、CSS 和 JavaScript |
 | 工程运维 | Docker Compose、Actuator、Prometheus、GitHub Actions |
 

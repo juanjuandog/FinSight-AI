@@ -39,8 +39,19 @@ services:
       context: ./ai-service
     container_name: finsight-ai-service
     environment:
+      # Model provider: ollama (default), openai-compatible, or anthropic.
+      # Cloud credentials are optional and intentionally unset by default.
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-45}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-gpt-4o-mini}
+      OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-haiku-latest}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_LOCAL_MODELS_ENABLED: ${AI_LOCAL_MODELS_ENABLED:-true}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
       RERANK_MODEL: ${RERANK_MODEL:-BAAI/bge-reranker-base}

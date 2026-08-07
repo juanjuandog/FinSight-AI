@@ -38,11 +38,21 @@ mvn spring-boot:run
 
 The full stack requires Docker for PostgreSQL/pgvector, RabbitMQ, Redis, the AI sidecar, Elasticsearch, and MinIO.
 
-## Ollama Is Not Installed
+## Configure a Generation Model
 
-Ollama is optional. If Ollama is missing, the AI service and backend fall back to deterministic rule-based analysis with `aiGenerated=false`.
+The default is `LLM_PROVIDER=ollama`, which needs no cloud API key. If it is unavailable, or if a selected cloud provider has no key configured, FinSight falls back to deterministic rule-based analysis with `aiGenerated=false`.
 
-To enable local model output:
+Copy `.env.example` to a local ignored `.env` file and choose one provider. Do not commit that file.
+
+| Provider | `LLM_PROVIDER` | Required configuration | Typical use |
+| --- | --- | --- | --- |
+| Ollama | `ollama` | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | Local models, default |
+| OpenAI-compatible | `openai-compatible` | `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_MODEL`, `OPENAI_COMPATIBLE_API_KEY` | OpenAI, DeepSeek, Qwen-compatible APIs, OpenRouter |
+| Anthropic | `anthropic` | `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, `ANTHROPIC_API_KEY` | Claude Messages API |
+
+`LLM_MODEL` is an optional provider-independent override. The `/health` endpoint returns the selected provider and model but never returns credentials.
+
+To enable the default local model:
 
 ```bash
 ollama serve

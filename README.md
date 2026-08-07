@@ -90,7 +90,7 @@ docker compose up -d --build
 ./scripts/quick-demo.sh
 ```
 
-The default demo requires no API key. Ollama is optional; deterministic fallbacks keep the flow runnable when a local model is unavailable. Allow roughly 8 GB of free memory for the complete Compose stack.
+The default demo requires no API key. Ollama is the default local provider, while the sidecar also has adapters for OpenAI-compatible APIs and Anthropic. If a selected model is unavailable or unconfigured, deterministic fallbacks keep the flow runnable. Allow roughly 8 GB of free memory for the complete Compose stack.
 
 | Mode | Best for | Runtime |
 | --- | --- | --- |
@@ -112,7 +112,10 @@ flowchart LR
     API --> Retrieval["FTS + Vector + RRF"]
     Retrieval --> DB
     Retrieval --> Sidecar["FastAPI: Embed · Rerank · Generate"]
-    Sidecar -. optional .-> Ollama["Ollama"]
+    Sidecar --> Providers["Provider adapters"]
+    Providers -. default .-> Ollama["Ollama"]
+    Providers -. optional .-> OpenAI["OpenAI-compatible"]
+    Providers -. optional .-> Anthropic["Anthropic"]
     Sidecar --> Report["Snapshot-bound Report"]
     Report --> DB
     API --> Eval["RAG Evaluation"]
@@ -131,7 +134,7 @@ Read the [architecture notes](docs/architecture.md) for the complete request, st
 | Workflow | RabbitMQ, task state machine, retry and dead-letter recovery |
 | Coordination | Redis, Lua leases, fencing tokens, snapshot-aware cache |
 | Retrieval | PostgreSQL JSONB, full-text search, pgvector, RRF, reranking |
-| AI runtime | FastAPI, sentence embeddings, cross-encoder reranking, optional Ollama |
+| AI runtime | FastAPI, sentence embeddings, cross-encoder reranking, Ollama/OpenAI-compatible/Anthropic adapters |
 | Product UI | Responsive HTML, CSS, and JavaScript served by Spring Boot |
 | Operations | Docker Compose, Actuator, Prometheus, GitHub Actions |
 

@@ -9,6 +9,7 @@ import os
 import re
 import time
 
+from app.llm_provider import GenerationResult, configured_model, generate_json, provider_status
 from app.model_runtime import embed_texts, rerank_scores, runtime_status
 
 app = FastAPI(title="FinSight AI Service", version="0.1.0")
@@ -109,9 +110,11 @@ class StockAnalysisResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    generation = provider_status()
     return {
         "status": "ok",
-        "ollamaModel": ollama_model(),
+        "ollamaModel": configured_model("ollama"),
+        "generation": generation,
         **runtime_status(),
     }
 
@@ -136,8 +139,8 @@ def a_share_universe(
 def analyze_stock(request: StockAnalysisRequest) -> StockAnalysisResponse:
     fallback = fallback_stock_analysis(request)
     try:
-        return call_ollama_stock_analysis(request, fallback)
-    except Exception:  # noqa: BLE001 - local demos should keep working without Ollama.
+        return call_configured_stock_analysis(request, fallback)
+    except Exception:  # noqa: BLE001 - demos remain runnable without a configured model.
         return fallback.model_copy(update={
             "source": "fallback-rule",
             "model": fallback.model,
@@ -257,42 +260,24 @@ def load_a_share_universe() -> AShareUniverseResponse:
     )
 
 
-def call_ollama_stock_analysis(
+def call_configured_stock_analysis(
     request: StockAnalysisRequest,
     fallback: StockAnalysisResponse,
 ) -> StockAnalysisResponse:
-    import requests
-
-    payload = {
-        "model": ollama_model(),
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "你是谨慎的A股投研助手。只基于用户提供的数据分析，不编造数据；"
-                    "输出必须是JSON，字段为rating, summary, positivePoints, riskPoints, confidence, citations。"
-                    "rating只能是积极、中性、谨慎之一。confidence是0到100整数。"
-                    "结尾不要给买卖建议，只做信息整理和风险提示。"
-                ),
-            },
-            {"role": "user", "content": stock_analysis_prompt(request)},
-        ],
-        "stream": False,
-        "format": "json",
-        "options": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-        },
-    }
-    response = requests.post(
-        trim_trailing_slash(ollama_base_url()) + "/api/chat",
-        json=payload,
-        timeout=float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "45")),
+    result = generate_json(
+        stock_analysis_system_prompt(),
+        stock_analysis_prompt(request),
     )
-    response.raise_for_status()
-    content = response.json().get("message", {}).get("content", "")
-    data = extract_json_object(content)
-    return normalize_ai_analysis(data, fallback)
+    return normalize_ai_analysis(extract_json_object(result.content), fallback, result)
+
+
+def stock_analysis_system_prompt() -> str:
+    return (
+        "你是谨慎的A股投研助手。只基于用户提供的数据分析，不编造数据；"
+        "输出必须是JSON，字段为rating, summary, positivePoints, riskPoints, confidence, citations。"
+        "rating只能是积极、中性、谨慎之一。confidence是0到100整数。"
+        "结尾不要给买卖建议，只做信息整理和风险提示。"
+    )
 
 
 def stock_analysis_prompt(request: StockAnalysisRequest) -> str:
@@ -311,7 +296,11 @@ def stock_analysis_prompt(request: StockAnalysisRequest) -> str:
     )
 
 
-def normalize_ai_analysis(data: dict[str, Any], fallback: StockAnalysisResponse) -> StockAnalysisResponse:
+def normalize_ai_analysis(
+    data: dict[str, Any],
+    fallback: StockAnalysisResponse,
+    generation: GenerationResult,
+) -> StockAnalysisResponse:
     rating = normalize_rating(data.get("rating"), fallback.rating)
     summary = clean_text(data.get("summary")) or fallback.summary
     positive_points = normalize_text_list(data.get("positivePoints")) or fallback.positivePoints
@@ -325,8 +314,8 @@ def normalize_ai_analysis(data: dict[str, Any], fallback: StockAnalysisResponse)
         riskPoints=risk_points[:4],
         confidence=confidence,
         citations=citations[:5],
-        model=ollama_model(),
-        source="ollama",
+        model=generation.model,
+        source=generation.source,
         aiGenerated=True,
     )
 
@@ -441,18 +430,6 @@ def dedupe(values: list[str | None]) -> list[str]:
         result.append(value)
         seen.add(value)
     return result
-
-
-def ollama_base_url() -> str:
-    return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-
-
-def ollama_model() -> str:
-    return os.getenv("OLLAMA_MODEL", os.getenv("FINSIGHT_OLLAMA_MODEL", "qwen2.5:7b"))
-
-
-def trim_trailing_slash(value: str) -> str:
-    return value[:-1] if value.endswith("/") else value
 
 
 def load_akshare_spot_em() -> list[StockInfo]:

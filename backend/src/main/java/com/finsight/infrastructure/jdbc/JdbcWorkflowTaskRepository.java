@@ -150,6 +150,17 @@ public class JdbcWorkflowTaskRepository implements WorkflowTaskRepository {
     }
 
     @Override
+    public List<WorkflowTask> findByRootTaskId(String rootTaskId) {
+        return jdbcTemplate.query("""
+                SELECT id, task_type, idempotency_key, status, stage, attempts, created_at, updated_at,
+                       payload::text, error_message, lease_owner, fencing_token
+                FROM workflow_tasks
+                WHERE id = ? OR payload ->> 'rootTaskId' = ?
+                ORDER BY created_at ASC
+                """, this::mapTask, rootTaskId, rootTaskId);
+    }
+
+    @Override
     public List<WorkflowTask> findByStatusUpdatedBefore(WorkflowStatus status, Instant cutoff) {
         return jdbcTemplate.query("""
                 SELECT id, task_type, idempotency_key, status, stage, attempts, created_at, updated_at,

@@ -50,4 +50,25 @@ class InMemoryWorkflowTaskRepositoryTest {
         assertThat(repository.saveIfOwned(running.succeeded(), WorkflowStatus.RUNNING, 8L)).isEmpty();
         assertThat(repository.findById(created.id()).orElseThrow().status()).isEqualTo(WorkflowStatus.RUNNING);
     }
+
+    @Test
+    void findsTheFullTaskChainForTheSubmittedResearchTask() {
+        InMemoryWorkflowTaskRepository repository = new InMemoryWorkflowTaskRepository();
+        WorkflowTask root = repository.createIfAbsent(
+                WorkflowTask.created("FINANCIAL_DATA_INGESTION", "ingestion:600519", Map.of("companySymbol", "600519"))
+        );
+        WorkflowTask analysis = repository.createIfAbsent(
+                WorkflowTask.created("STOCK_AI_ANALYSIS", "analysis:600519", Map.of(
+                        "companySymbol", "600519",
+                        "rootTaskId", root.id()
+                ))
+        );
+        repository.createIfAbsent(
+                WorkflowTask.created("STOCK_AI_ANALYSIS", "analysis:000001", Map.of("rootTaskId", "another-task"))
+        );
+
+        assertThat(repository.findByRootTaskId(root.id()))
+                .extracting(WorkflowTask::id)
+                .containsExactlyInAnyOrder(root.id(), analysis.id());
+    }
 }

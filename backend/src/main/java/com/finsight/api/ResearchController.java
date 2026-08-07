@@ -66,6 +66,16 @@ public class ResearchController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Research workflow task not found"));
     }
 
+    @GetMapping("/tasks/{taskId}/progress")
+    public List<ResearchTaskResponse> progress(@PathVariable String taskId) {
+        if (workflowTaskRepository.findById(taskId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Research workflow task not found");
+        }
+        return workflowTaskRepository.findByRootTaskId(taskId).stream()
+                .map(this::response)
+                .toList();
+    }
+
     @GetMapping("/reports/{symbol}/latest")
     public StockAiAnalysisService.StockAiAnalysisResponse latestReport(@PathVariable String symbol) {
         return stockAiAnalysisService.latest(symbol)

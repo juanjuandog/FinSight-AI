@@ -112,6 +112,19 @@
             </div>
             <strong id="confidenceScore" class="confidence-score pending" hidden>置信度待生成</strong>
           </div>
+          <section id="analysisProgress" class="analysis-progress" aria-live="polite" hidden>
+            <div class="analysis-progress-copy">
+              <span>研究任务</span>
+              <strong id="analysisProgressTitle">正在准备数据</strong>
+              <p id="analysisProgressDetail">你可以继续查看行情与上一版结论。</p>
+            </div>
+            <ol class="analysis-progress-steps" aria-label="分析进度">
+              <li data-progress-stage="prepare">准备数据</li>
+              <li data-progress-stage="evidence">检索证据</li>
+              <li data-progress-stage="analysis">生成结论</li>
+              <li data-progress-stage="complete">保存报告</li>
+            </ol>
+          </section>
           <p id="analysisConclusion" class="analysis-conclusion">生成分析后，这里会直接给出结论、理由与风险。</p>
           <div class="analysis-columns">
             <article>

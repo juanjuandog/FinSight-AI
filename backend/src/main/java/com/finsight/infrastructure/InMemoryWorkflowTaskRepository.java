@@ -67,6 +67,15 @@ public class InMemoryWorkflowTaskRepository implements WorkflowTaskRepository {
     }
 
     @Override
+    public List<WorkflowTask> findByRootTaskId(String rootTaskId) {
+        return tasks.values().stream()
+                .filter(task -> task.id().equals(rootTaskId)
+                        || rootTaskId.equals(String.valueOf(task.payload().getOrDefault("rootTaskId", ""))))
+                .sorted(java.util.Comparator.comparing(WorkflowTask::createdAt))
+                .toList();
+    }
+
+    @Override
     public List<WorkflowTask> findByStatusUpdatedBefore(WorkflowStatus status, Instant cutoff) {
         return tasks.values().stream()
                 .filter(task -> task.status() == status)

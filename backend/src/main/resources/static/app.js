@@ -5,6 +5,8 @@ let chartLimit = 120;
 let latestQuote = null;
 let latestCandles = [];
 let latestAiAnalysis = null;
+let latestMetrics = [];
+let latestRisks = [];
 let latestEvents = [];
 let latestWatchlist = [];
 let eventsLoadError = false;
@@ -12,6 +14,8 @@ let watchlistLoadError = false;
 let evidenceScope = "company";
 let refreshGeneration = 0;
 let chartGeneration = 0;
+let loadedSymbol = null;
+let workflowGeneration = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -31,59 +35,100 @@ async function refresh() {
   const requestGeneration = ++refreshGeneration;
   const requestedSymbol = symbol;
   const requestedChartGeneration = ++chartGeneration;
-  const [
-    nextCompanies,
-    quote,
-    candles,
-    metrics,
-    risks,
-    aiAnalysis,
-    eventsResult,
-    watchlistResult
-  ] = await Promise.all([
-    request("/api/companies?limit=200").catch(() => companies),
-    request(`/api/market/quotes/${requestedSymbol}`).catch(error => ({
+  const isCurrent = () => requestGeneration === refreshGeneration && requestedSymbol === symbol;
+
+  if (loadedSymbol !== requestedSymbol) {
+    loadedSymbol = requestedSymbol;
+    latestQuote = null;
+    latestCandles = [];
+    latestAiAnalysis = null;
+    latestMetrics = [];
+    latestRisks = [];
+    updateCompanyCard();
+    renderAnalysis([], [], null, null);
+    renderChart([]);
+    renderChartStats([], null);
+  }
+
+  const companiesRequest = request("/api/companies?limit=200")
+    .catch(() => companies)
+    .then(nextCompanies => {
+      if (!isCurrent()) return;
+      companies = Array.isArray(nextCompanies) ? nextCompanies : companies;
+      updateCompanyCard(latestQuote);
+    });
+
+  request(`/api/market/quotes/${requestedSymbol}`).catch(error => ({
       symbol: requestedSymbol,
       name: `股票 ${requestedSymbol}`,
       exchange: "CN",
       realtime: false,
       source: "LOCAL_ERROR",
       message: error.message
-    })),
-    request(`/api/market/history/${requestedSymbol}?limit=${chartLimit}`).catch(() => []),
-    request(`/api/metrics/${requestedSymbol}`).catch(() => []),
-    request(`/api/metrics/${requestedSymbol}/risks`).catch(() => []),
-    request(`/api/companies/${requestedSymbol}/ai-analysis/latest`).catch(() => null),
-    request(`/api/intelligence/${requestedSymbol}/timeline`)
-      .then(data => ({ ok: true, data }))
-      .catch(error => ({ ok: false, error })),
-    request("/api/watchlist")
-      .then(data => ({ ok: true, data }))
-      .catch(error => ({ ok: false, error }))
-  ]);
+    })).then(quote => {
+      if (!isCurrent()) return;
+      latestQuote = quote;
+      updateCompanyCard(quote);
+      renderUniverseStatus();
+      renderAnalysis(latestMetrics, latestRisks, quote, latestAiAnalysis);
+      renderChartStats(latestCandles, quote);
+    });
 
-  if (requestGeneration !== refreshGeneration || requestedSymbol !== symbol) {
-    return;
-  }
+  request(`/api/companies/${requestedSymbol}/ai-analysis/latest`)
+    .catch(() => null)
+    .then(aiAnalysis => {
+      if (!isCurrent()) return;
+      latestAiAnalysis = aiAnalysis;
+      renderAnalysis(latestMetrics, latestRisks, latestQuote, aiAnalysis);
+      renderUniverseStatus();
+    });
 
-  companies = nextCompanies;
-  latestQuote = quote;
-  latestAiAnalysis = aiAnalysis;
-  eventsLoadError = !eventsResult.ok;
-  watchlistLoadError = !watchlistResult.ok;
-  latestEvents = eventsResult.ok && Array.isArray(eventsResult.data) ? eventsResult.data : [];
-  latestWatchlist = watchlistResult.ok && Array.isArray(watchlistResult.data) ? watchlistResult.data : [];
-  if (requestedChartGeneration === chartGeneration) {
-    latestCandles = candles;
-  }
+  request(`/api/market/history/${requestedSymbol}?limit=${chartLimit}`)
+    .catch(() => [])
+    .then(candles => {
+      if (!isCurrent() || requestedChartGeneration !== chartGeneration) return;
+      latestCandles = Array.isArray(candles) ? candles : [];
+      renderChart(latestCandles);
+      renderChartStats(latestCandles, latestQuote);
+    });
 
-  renderUniverseStatus();
-  renderWatchlist();
-  renderEvents();
-  updateCompanyCard(quote);
-  renderAnalysis(metrics, risks, quote, aiAnalysis);
-  renderChart(latestCandles);
-  renderChartStats(latestCandles, quote);
+  request(`/api/metrics/${requestedSymbol}`)
+    .catch(() => [])
+    .then(metrics => {
+      if (!isCurrent()) return;
+      latestMetrics = Array.isArray(metrics) ? metrics : [];
+      renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
+    });
+
+  request(`/api/metrics/${requestedSymbol}/risks`)
+    .catch(() => [])
+    .then(risks => {
+      if (!isCurrent()) return;
+      latestRisks = Array.isArray(risks) ? risks : [];
+      renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
+    });
+
+  request(`/api/intelligence/${requestedSymbol}/timeline`)
+    .then(data => ({ ok: true, data }))
+    .catch(error => ({ ok: false, error }))
+    .then(result => {
+      if (!isCurrent()) return;
+      eventsLoadError = !result.ok;
+      latestEvents = result.ok && Array.isArray(result.data) ? result.data : [];
+      renderEvents();
+    });
+
+  request("/api/watchlist")
+    .then(data => ({ ok: true, data }))
+    .catch(error => ({ ok: false, error }))
+    .then(result => {
+      if (!isCurrent()) return;
+      watchlistLoadError = !result.ok;
+      latestWatchlist = result.ok && Array.isArray(result.data) ? result.data : [];
+      renderWatchlist();
+    });
+
+  await companiesRequest;
 }
 
 function updateCompanyCard(quote = null) {
@@ -571,51 +616,162 @@ function negativeText(checks, risks, quote) {
 
 async function runWorkflow() {
   const button = $("runWorkflow");
+  const currentWorkflowGeneration = ++workflowGeneration;
   button.disabled = true;
-  button.textContent = "正在分析";
-  $("analysisUpdatedAt").hidden = false;
-  $("analysisUpdatedAt").textContent = "正在准备研究任务";
+  button.textContent = "分析进行中";
+  showAnalysisProgress("prepare", "正在准备数据", "正在基于当前数据生成新版报告；上一版结论仍可继续查看。");
   renderUniverseStatus(`正在分析 ${symbol}...`);
   try {
     const requestedSymbol = resolveSymbol($("symbolInput").value);
     if (requestedSymbol !== symbol) {
-      await selectSymbol(requestedSymbol);
+      await selectSymbol(requestedSymbol, { preserveAnalysisProgress: true });
     } else {
       $("symbolInput").value = symbol;
     }
+    const workflowSymbol = symbol;
     const task = await request("/api/research/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol })
     });
-    await waitForResearchTask(task);
-    await refresh();
-    $("analysisUpdatedAt").textContent = `分析已更新，${formatDateTime(latestAiAnalysis?.generatedAt) || "刚刚"}`;
+    const result = await waitForResearchTask(task, currentWorkflowGeneration, workflowSymbol);
+    if (!result.completed) {
+      showAnalysisProgress("analysis", "任务仍在后台运行", "你可以继续查看行情和上一版结论；新报告完成后会自动更新。", true);
+      monitorResearchTask(task, currentWorkflowGeneration, workflowSymbol);
+      return;
+    }
+    await refreshCompletedAnalysis(workflowSymbol, currentWorkflowGeneration);
   } catch (error) {
-    $("analysisUpdatedAt").textContent = `分析失败：${error.message}`;
+    if (currentWorkflowGeneration === workflowGeneration) {
+      showAnalysisProgress("analysis", "分析未能完成", `${error.message}。你可以稍后重新生成。`, true, true);
+      $("analysisUpdatedAt").hidden = false;
+      $("analysisUpdatedAt").textContent = "上一版结论未受影响";
+    }
   } finally {
     button.disabled = false;
     button.textContent = "生成分析";
   }
 }
 
-async function waitForResearchTask(task) {
-  let currentTask = task;
-  const terminalStates = new Set(["SUCCEEDED", "FAILED", "DEAD_LETTER"]);
-  for (let attempt = 0; attempt < 45; attempt += 1) {
-    const status = String(currentTask?.status || "");
-    if (terminalStates.has(status)) {
-      if (status !== "SUCCEEDED") {
-        throw new Error(currentTask?.errorMessage || "分析任务未能完成");
-      }
-      return currentTask;
+async function waitForResearchTask(task, currentWorkflowGeneration, workflowSymbol, options = {}) {
+  const maxAttempts = options.maxAttempts || 45;
+  const pollDelay = options.pollDelay || 900;
+  const startedAt = Date.now();
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (currentWorkflowGeneration !== workflowGeneration || workflowSymbol !== symbol) {
+      return { completed: false, cancelled: true };
     }
-    const stage = String(currentTask?.stage || "处理中").replaceAll("_", " ").toLowerCase();
-    $("analysisUpdatedAt").textContent = `分析进行中：${stage}`;
-    await delay(900);
-    currentTask = await request(`/api/research/tasks/${encodeURIComponent(currentTask.taskId)}`);
+    const tasks = attempt === 0
+      ? [task]
+      : await request(`/api/research/tasks/${encodeURIComponent(task.taskId)}/progress`);
+    const failedTask = tasks.find(item => ["FAILED", "DEAD_LETTER"].includes(String(item.status)));
+    if (failedTask) {
+      throw new Error(failedTask.errorMessage || "分析任务未能完成");
+    }
+    const aiTask = tasks.find(item => String(item.taskType) === "STOCK_AI_ANALYSIS");
+    if (aiTask && String(aiTask.status) === "SUCCEEDED") {
+      showAnalysisProgress("complete", "正在保存报告", "新结论已经生成，正在更新分析区域。");
+      return { completed: true, task: aiTask };
+    }
+    const currentTask = workflowCurrentTask(tasks);
+    updateAnalysisProgress(currentTask, Date.now() - startedAt);
+    await delay(pollDelay);
   }
-  throw new Error("分析仍在后台运行，请稍后查看");
+  return { completed: false };
+}
+
+function workflowCurrentTask(tasks) {
+  const unfinished = tasks.filter(item => String(item.status) !== "SUCCEEDED");
+  return unfinished[unfinished.length - 1] || tasks[tasks.length - 1] || {};
+}
+
+function analysisProgressStage(task) {
+  const taskType = String(task?.taskType || "");
+  const stage = String(task?.stage || "");
+  if (taskType === "STOCK_AI_ANALYSIS" || stage === "AI_ANALYZING") return "analysis";
+  if (["DOCUMENT_INDEX_BUILD", "COMPANY_INTELLIGENCE_BUILD"].includes(taskType)
+      || ["DOCUMENT_INDEXING", "INTELLIGENCE_BUILDING"].includes(stage)) return "evidence";
+  if (String(task?.status) === "SUCCEEDED") return "complete";
+  return "prepare";
+}
+
+function updateAnalysisProgress(task, elapsed) {
+  const stage = analysisProgressStage(task);
+  const content = {
+    prepare: ["正在准备数据", "同步行情与财务指标，建立本次研究快照。"],
+    evidence: ["正在检索证据", "整理公开披露、指标变化与风险信号。"],
+    analysis: ["正在生成结论", "模型正在归纳支持因素、风险与置信度。"],
+    complete: ["正在保存报告", "新结论已经生成，正在更新分析区域。"]
+  }[stage];
+  const detail = elapsed >= 8000
+    ? "任务仍在后台运行，你可以继续查看行情和上一版结论。"
+    : content[1];
+  showAnalysisProgress(stage, content[0], detail);
+}
+
+function showAnalysisProgress(stage, title, detail, persistent = false, failed = false) {
+  const progress = $("analysisProgress");
+  const stages = ["prepare", "evidence", "analysis", "complete"];
+  const activeIndex = Math.max(0, stages.indexOf(stage));
+  progress.hidden = false;
+  progress.dataset.persistent = String(persistent);
+  progress.classList.toggle("is-failed", failed);
+  $("analysisProgressTitle").textContent = title;
+  $("analysisProgressDetail").textContent = detail;
+  progress.querySelectorAll("[data-progress-stage]").forEach((item, index) => {
+    item.classList.toggle("is-complete", !failed && index < activeIndex);
+    item.classList.toggle("is-active", !failed && index === activeIndex);
+  });
+}
+
+function hideAnalysisProgress() {
+  $("analysisProgress").hidden = true;
+  $("analysisProgress").classList.remove("is-failed");
+}
+
+async function refreshCompletedAnalysis(workflowSymbol, currentWorkflowGeneration) {
+  const aiAnalysis = await request(`/api/research/reports/${encodeURIComponent(workflowSymbol)}/latest`);
+  if (workflowSymbol !== symbol || currentWorkflowGeneration !== workflowGeneration) return;
+  latestAiAnalysis = aiAnalysis;
+  renderAnalysis(latestMetrics, latestRisks, latestQuote, aiAnalysis);
+  renderUniverseStatus();
+  showAnalysisProgress("complete", "报告已更新", "分析区域已切换到最新结论。");
+  window.setTimeout(() => {
+    if (currentWorkflowGeneration === workflowGeneration
+        && $("analysisProgress").dataset.persistent !== "true") {
+      hideAnalysisProgress();
+    }
+  }, 1800);
+  refreshAnalysisInputs(workflowSymbol, currentWorkflowGeneration);
+}
+
+function refreshAnalysisInputs(workflowSymbol, currentWorkflowGeneration) {
+  request(`/api/metrics/${workflowSymbol}`).then(metrics => {
+    if (workflowSymbol !== symbol || currentWorkflowGeneration !== workflowGeneration) return;
+    latestMetrics = Array.isArray(metrics) ? metrics : [];
+    renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
+  }).catch(() => {});
+  request(`/api/metrics/${workflowSymbol}/risks`).then(risks => {
+    if (workflowSymbol !== symbol || currentWorkflowGeneration !== workflowGeneration) return;
+    latestRisks = Array.isArray(risks) ? risks : [];
+    renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
+  }).catch(() => {});
+}
+
+async function monitorResearchTask(task, currentWorkflowGeneration, workflowSymbol) {
+  try {
+    const result = await waitForResearchTask(task, currentWorkflowGeneration, workflowSymbol, {
+      maxAttempts: 60,
+      pollDelay: 4000
+    });
+    if (result.completed) {
+      await refreshCompletedAnalysis(workflowSymbol, currentWorkflowGeneration);
+    }
+  } catch (error) {
+    if (currentWorkflowGeneration === workflowGeneration && workflowSymbol === symbol) {
+      showAnalysisProgress("analysis", "后台分析未能完成", `${error.message}。你可以稍后重新生成。`, true, true);
+    }
+  }
 }
 
 function delay(milliseconds) {
@@ -688,7 +844,7 @@ async function search() {
   }
 }
 
-async function selectSymbol(nextSymbol) {
+async function selectSymbol(nextSymbol, options = {}) {
   const input = $("symbolInput");
   let next;
   try {
@@ -700,6 +856,10 @@ async function selectSymbol(nextSymbol) {
     return false;
   }
   input.setCustomValidity("");
+  if (next !== symbol && !options.preserveAnalysisProgress) {
+    workflowGeneration += 1;
+    hideAnalysisProgress();
+  }
   symbol = next;
   $("symbolInput").value = symbol;
   await refresh();
@@ -715,7 +875,10 @@ function ratingClass(rating) {
 }
 
 function analysisMeta(aiAnalysis) {
-  return `${aiAnalysis.aiGenerated ? "Ollama 本地模型" : "规则兜底"}，${aiAnalysis.cacheHit ? "缓存命中" : "新报告"}，${formatDateTime(aiAnalysis.generatedAt) || aiAnalysis.source || "AI 分析"}`;
+  const source = aiAnalysis.aiGenerated
+    ? (aiAnalysis.model || aiAnalysis.source || "AI 模型")
+    : "规则兜底";
+  return `${source}，${aiAnalysis.cacheHit ? "缓存命中" : "新报告"}，${formatDateTime(aiAnalysis.generatedAt) || "刚刚"}`;
 }
 
 function statusName(level) {

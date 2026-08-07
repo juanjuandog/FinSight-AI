@@ -23,5 +23,7 @@ public interface WorkflowTaskRepository {
 
     List<WorkflowTask> findAll();
 
+    List<WorkflowTask> findByRootTaskId(String rootTaskId);
+
     List<WorkflowTask> findByStatusUpdatedBefore(WorkflowStatus status, Instant cutoff);
 }

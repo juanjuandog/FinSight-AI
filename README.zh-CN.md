@@ -170,13 +170,14 @@ mvn test
 - [Agent 工作流设计](docs/design-agent-workflow.md)
 - [Benchmark 与评测](docs/benchmark.md)
 - [产品需求](docs/product-requirements.md)
+- [账户与个人工作区 PRD](docs/prd-user-accounts-and-workspaces.md)
 - [故障排查](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md)
 - [参与贡献](CONTRIBUTING.md)
 
 ## 当前边界
 
-FinSight 当前面向 A 股研究和本地 Production-like 演示。用户鉴权、受监管投研流程、交易执行、组合建议和多市场支持不在当前范围内。
+FinSight 当前面向 A 股研究和本地 Production-like 演示，已提供邮箱账户、服务端会话和个人关注列表。团队空间、受监管投研流程、交易执行、组合建议和多市场支持不在当前范围内。
 
 ## License
 

@@ -41,7 +41,7 @@ public class UserWatchlistService {
 
     private String normalizeUser(String userId) {
         if (userId == null || userId.isBlank()) {
-            return "demo-user";
+            throw new IllegalArgumentException("用户身份不能为空。");
         }
         return userId.trim();
     }

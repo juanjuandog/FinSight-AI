@@ -52,6 +52,23 @@ Copy `.env.example` to a local ignored `.env` file and choose one provider. Do n
 
 `LLM_MODEL` is an optional provider-independent override. The `/health` endpoint returns the selected provider and model but never returns credentials.
 
+## Configure Password Reset Email
+
+Accounts, login, logout, and personal watchlists work without SMTP. To deliver password-reset links, configure these variables in `.env`:
+
+```text
+FINSIGHT_AUTH_EMAIL_ENABLED=true
+FINSIGHT_AUTH_MAIL_FROM=noreply@example.com
+FINSIGHT_PUBLIC_BASE_URL=https://your-finsight.example.com
+SPRING_MAIL_HOST=smtp.example.com
+SPRING_MAIL_PORT=587
+SPRING_MAIL_USERNAME=your-smtp-user
+SPRING_MAIL_PASSWORD=your-smtp-password
+FINSIGHT_AUTH_SECURE_COOKIE=true
+```
+
+Keep email disabled until SMTP is valid. Production deployments served over HTTPS must use secure cookies; the local `http://localhost:8080` demo uses `FINSIGHT_AUTH_SECURE_COOKIE=false`.
+
 To enable the default local model:
 
 ```bash

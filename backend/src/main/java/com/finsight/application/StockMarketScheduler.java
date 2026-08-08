@@ -17,6 +17,7 @@ public class StockMarketScheduler {
 
     private final StockUniverseService stockUniverseService;
     private final StockAnalysisApplicationService stockAnalysisApplicationService;
+    private final DailyRecommendationService dailyRecommendationService;
     private final int batchLimit;
     private final AtomicBoolean stockUniverseRunning = new AtomicBoolean(false);
     private final AtomicBoolean batchAnalysisRunning = new AtomicBoolean(false);
@@ -24,10 +25,12 @@ public class StockMarketScheduler {
     public StockMarketScheduler(
             StockUniverseService stockUniverseService,
             StockAnalysisApplicationService stockAnalysisApplicationService,
+            DailyRecommendationService dailyRecommendationService,
             @Value("${finsight.scheduler.batch-limit:20}") int batchLimit
     ) {
         this.stockUniverseService = stockUniverseService;
         this.stockAnalysisApplicationService = stockAnalysisApplicationService;
+        this.dailyRecommendationService = dailyRecommendationService;
         this.batchLimit = batchLimit;
     }
 
@@ -62,6 +65,16 @@ public class StockMarketScheduler {
             log.warn("Scheduled stock analysis failed", ex);
         } finally {
             batchAnalysisRunning.set(false);
+        }
+    }
+
+    @Scheduled(cron = "${finsight.scheduler.daily-recommendation-cron:0 10 15 * * MON-FRI}", zone = "${finsight.scheduler.zone:Asia/Shanghai}")
+    public void refreshDailyRecommendations() {
+        try {
+            DailyRecommendationService.DailyRecommendations result = dailyRecommendationService.refresh();
+            log.info("Daily recommendations refreshed: date={}, universe={}, top={}", result.tradeDate(), result.universeSize(), result.items().get(0).symbol());
+        } catch (RuntimeException ex) {
+            log.warn("Daily recommendation refresh failed", ex);
         }
     }
 }

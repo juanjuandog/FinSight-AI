@@ -516,6 +516,18 @@
   font-weight: 500;
 }
 
+.analysis-quality-meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.data-completeness {
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: 10px;
+}
+
 .analysis-conclusion {
   max-width: 900px;
   margin: 28px 0;
@@ -539,6 +551,15 @@
 .analysis-columns article + article {
   padding-left: 24px;
   border-left: 1px solid var(--line);
+}
+
+.analysis-columns article:nth-child(odd) {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.analysis-columns article:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
 }
 
 .analysis-columns h2 {

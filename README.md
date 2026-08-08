@@ -170,13 +170,14 @@ mvn test
 - [Agent Workflow Design](docs/design-agent-workflow.md)
 - [Benchmark and Evaluation](docs/benchmark.md)
 - [Product Requirements](docs/product-requirements.md)
+- [Accounts and Personal Workspace PRD](docs/prd-user-accounts-and-workspaces.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Scope
 
-FinSight currently targets A-share research and local, production-like demonstrations. Authentication, regulated research workflows, trade execution, portfolio advice, and multi-market coverage are outside the current scope.
+FinSight currently targets A-share research and local, production-like demonstrations, with email accounts, server-side sessions, and private watchlists. Team workspaces, regulated research workflows, trade execution, portfolio advice, and multi-market coverage remain outside the current scope.
 
 ## License
 

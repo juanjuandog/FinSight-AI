@@ -1,4 +1,4 @@
-let symbol = "600519";
+let symbol = "600900";
 let companies = [];
 let suggestionTimer = null;
 let chartLimit = 120;
@@ -16,6 +16,13 @@ let refreshGeneration = 0;
 let chartGeneration = 0;
 let loadedSymbol = null;
 let workflowGeneration = 0;
+let authUser = null;
+let csrfToken = "";
+let authView = "login";
+let pendingAuthAction = null;
+let resetToken = "";
+let verificationCountdownTimer = null;
+let dailyRecommendationRetryTimer = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -24,12 +31,155 @@ function cssToken(name, fallback) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(path, options);
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (!(["GET", "HEAD", "OPTIONS"].includes(method)) && csrfToken) {
+    headers.set("X-CSRF-Token", csrfToken);
   }
-  return response.json();
+  const response = await fetch(path, { ...options, headers, credentials: "same-origin" });
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      message = body.detail || body.message || message;
+    } catch {
+      // Keep the HTTP status when the server did not return JSON.
+    }
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  if (response.status === 204) {
+    return null;
+  }
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
+
+async function loadSession() {
+  const response = await fetch("/api/auth/session", { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new Error("账户状态暂时无法读取");
+  }
+  const session = await response.json();
+  csrfToken = session.csrfToken || "";
+  authUser = session.user || null;
+  renderAccountState();
+  setAuthGateRequired(!authUser);
+}
+
+function setAuthGateRequired(required) {
+  document.body.classList.toggle("auth-required", required);
+  if (required) {
+    document.body.classList.add("auth-open");
+    $("authDialog").hidden = false;
+  } else {
+    document.body.classList.remove("auth-open");
+    $("authDialog").hidden = true;
+  }
+}
+
+function renderAccountState() {
+  const button = $("accountButton");
+  const label = $("accountStatusLabel");
+  const detail = $("accountStatusDetail");
+  const logout = $("logoutButton");
+  if (!button || !label || !detail || !logout) return;
+  if (authUser) {
+    label.textContent = authUser.email;
+    detail.textContent = "已登录";
+    logout.hidden = false;
+    button.setAttribute("aria-label", "打开个人工作区");
+  } else {
+    label.textContent = "登录以保存研究";
+    detail.textContent = "关注列表与研究记录仅对你可见";
+    logout.hidden = true;
+    button.setAttribute("aria-label", "登录以保存研究");
+  }
+  renderWatchlist();
+}
+
+function openAuthDialog(view = "login", action = null) {
+  authView = view;
+  pendingAuthAction = action;
+  $("authDialog").hidden = false;
+  document.body.classList.add("auth-open");
+  renderAuthView();
+  window.setTimeout(() => $("authEmail")?.focus(), 0);
+}
+
+function closeAuthDialog() {
+  if (!authUser) return;
+  $("authDialog").hidden = true;
+  document.body.classList.remove("auth-open");
+  pendingAuthAction = null;
+  $("authFeedback").textContent = "";
+  $("authForm").reset();
+  $("resetRequestForm").reset();
+  $("resetConfirmForm").reset();
+  $("authVerificationCode").value = "";
+  $("authVerificationHint").textContent = "请先获取邮箱验证码。";
+  resetPasswordVisibility();
+  if (window.location.search) {
+    window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+  }
+}
+
+function renderAuthView() {
+  const login = authView === "login";
+  const register = authView === "register";
+  const resetRequest = authView === "reset-request";
+  const resetConfirm = authView === "reset-confirm";
+  $("authTitle").textContent = login ? "登录 FinSight AI" : register ? "注册 FinSight AI" : resetConfirm ? "设置新密码" : "重置你的密码";
+  $("authIntro").textContent = login
+    ? "登录后开始你的股票研究。"
+    : register
+      ? "创建账号后保存你的研究。"
+      : "";
+  document.querySelectorAll(".auth-tab").forEach(tab => {
+    const active = tab.dataset.authView === authView;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.hidden = resetRequest || resetConfirm;
+  });
+  $("authForm").hidden = !login && !register;
+  $("resetRequestForm").hidden = !resetRequest;
+  $("resetConfirmForm").hidden = !resetConfirm;
+  $("forgotPasswordButton").hidden = !login;
+  $("authPasswordConfirmLabel").hidden = !register;
+  $("authPasswordConfirmField").hidden = !register;
+  $("authPasswordConfirm").required = register;
+  $("authVerificationFields").hidden = !register;
+  $("authVerificationCode").required = register;
+  $("authPassword").autocomplete = register ? "new-password" : "current-password";
+  $("authSubmitButton").textContent = register ? "创建账号" : "登录";
+  $("authFeedback").textContent = "";
+  resetPasswordVisibility();
+}
+
+function setAuthFeedback(message) {
+  $("authFeedback").textContent = message || "";
+}
+
+function resetPasswordVisibility() {
+  document.querySelectorAll(".password-toggle").forEach(button => {
+    const input = $(button.dataset.passwordTarget);
+    if (input) input.type = "password";
+    button.setAttribute("aria-pressed", "false");
+    button.setAttribute("aria-label", button.dataset.passwordTarget?.includes("Confirm") ? "显示确认密码" : "显示密码");
+  });
+}
+
+document.querySelectorAll(".password-toggle").forEach(button => {
+  button.addEventListener("click", () => {
+    const input = $(button.dataset.passwordTarget);
+    if (!input) return;
+    const visible = input.type === "password";
+    input.type = visible ? "text" : "password";
+    button.setAttribute("aria-pressed", String(visible));
+    button.setAttribute("aria-label", visible ? "隐藏密码" : "显示密码");
+  });
+});
 
 async function refresh() {
   const requestGeneration = ++refreshGeneration;
@@ -118,15 +268,21 @@ async function refresh() {
       renderEvents();
     });
 
-  request("/api/watchlist")
-    .then(data => ({ ok: true, data }))
-    .catch(error => ({ ok: false, error }))
-    .then(result => {
-      if (!isCurrent()) return;
-      watchlistLoadError = !result.ok;
-      latestWatchlist = result.ok && Array.isArray(result.data) ? result.data : [];
-      renderWatchlist();
-    });
+  if (authUser) {
+    request("/api/watchlist")
+      .then(data => ({ ok: true, data }))
+      .catch(error => ({ ok: false, error }))
+      .then(result => {
+        if (!isCurrent()) return;
+        watchlistLoadError = !result.ok;
+        latestWatchlist = result.ok && Array.isArray(result.data) ? result.data : [];
+        renderWatchlist();
+      });
+  } else {
+    watchlistLoadError = false;
+    latestWatchlist = [];
+    renderWatchlist();
+  }
 
   await companiesRequest;
 }
@@ -150,6 +306,18 @@ function renderUniverseStatus(message = "") {
 }
 
 function renderWatchlist() {
+  if (!authUser) {
+    $("stockList").innerHTML = `
+      <div class="empty-state">
+        <strong>登录后使用个人关注列表</strong>
+        <p>登录后，你的关注公司会在不同设备间保持同步。</p>
+        <button class="text-action" type="button" data-open-auth>登录 / 注册</button>
+      </div>
+    `;
+    $("poolCount").textContent = "需要登录";
+    $("addCurrentToWatchlist").textContent = "登录后加入";
+    return;
+  }
   if (watchlistLoadError) {
     $("stockList").innerHTML = `
       <div class="empty-state error-state">
@@ -206,6 +374,10 @@ function renderWatchlist() {
 }
 
 async function addCurrentCompanyToWatchlist() {
+  if (!authUser) {
+    openAuthDialog("login", addCurrentCompanyToWatchlist);
+    return;
+  }
   const button = $("addCurrentToWatchlist");
   button.disabled = true;
   $("watchlistActionStatus").textContent = "正在加入…";
@@ -315,12 +487,12 @@ function renderQuote(quote) {
 function renderAnalysis(metrics, risks, quote, aiAnalysis = null) {
   const checks = metrics.length ? healthChecks(metrics) : [];
   if (!metrics.length) {
-    const displayRating = aiAnalysis?.rating || "等待分析";
+    const guidance = analysisGuidance(aiAnalysis, "等待确认", [], []);
+    const displayRating = aiAnalysis ? guidance.researchPriority : "等待分析";
     $("ratingBadge").textContent = displayRating;
     $("ratingBadge").className = `rating ${ratingClass(displayRating)}`;
-    $("analysisConclusion").textContent = aiAnalysis?.summary || "点击“生成分析”后，系统会回答这只股票能不能看、为什么、风险在哪里、证据来自哪里。";
-    $("positivePoints").innerHTML = decisionList(aiAnalysis?.positivePoints, "暂无核心理由。");
-    $("negativePoints").innerHTML = decisionList(aiAnalysis?.riskPoints, "暂无主要风险。");
+    $("analysisConclusion").textContent = aiAnalysis?.summary || "点击“生成分析”后，这里会给出研究优先级、确认条件、失效信号和下一步动作。";
+    renderGuidancePanels(guidance, aiAnalysis?.positivePoints, aiAnalysis?.riskPoints);
     $("confidenceScore").textContent = aiAnalysis?.confidence != null ? `${aiAnalysis.confidence}%` : "置信度待生成";
     $("confidenceScore").classList.toggle("pending", aiAnalysis?.confidence == null);
     $("confidenceScore").hidden = aiAnalysis?.confidence == null;
@@ -332,23 +504,46 @@ function renderAnalysis(metrics, risks, quote, aiAnalysis = null) {
 
   const warningCount = checks.filter(check => check.level !== "good").length + risks.length;
   const quoteWeak = Number(quote?.changePercent || 0) < -1;
-  const rating = warningCount >= 4 || quoteWeak ? "谨慎" : warningCount >= 2 ? "中性" : "积极";
+  const rating = warningCount >= 4 || quoteWeak ? "暂不进入候选" : warningCount >= 2 ? "等待确认" : "优先研究";
   const confidence = Math.max(68, Math.min(92, 86 - warningCount * 4 + (quote?.realtime ? 4 : 0)));
   const company = quote?.name || companies.find(item => item.symbol === symbol)?.name || `股票 ${symbol}`;
-  const displayRating = aiAnalysis?.rating || rating;
+  const guidance = analysisGuidance(aiAnalysis, rating, positiveText(checks), negativeText(checks, risks, quote));
+  const displayRating = guidance.researchPriority;
   const displayConfidence = aiAnalysis?.confidence ?? confidence;
 
   $("ratingBadge").textContent = displayRating;
   $("ratingBadge").className = `rating ${ratingClass(displayRating)}`;
-  $("analysisConclusion").textContent = aiAnalysis?.summary || conclusionText(company, rating, checks, risks, quote);
-  $("positivePoints").innerHTML = decisionList(aiAnalysis?.positivePoints, positiveText(checks));
-  $("negativePoints").innerHTML = decisionList(aiAnalysis?.riskPoints, negativeText(checks, risks, quote));
+  $("analysisConclusion").textContent = aiAnalysis?.guidance?.summary || aiAnalysis?.summary || conclusionText(company, rating, checks, risks, quote);
+  renderGuidancePanels(guidance, aiAnalysis?.positivePoints || positiveText(checks), aiAnalysis?.riskPoints || negativeText(checks, risks, quote));
   $("confidenceScore").textContent = `${displayConfidence}%`;
   $("confidenceScore").classList.remove("pending");
   $("confidenceScore").hidden = false;
   $("analysisUpdatedAt").textContent = aiAnalysis ? analysisMeta(aiAnalysis) : quote?.tradeDate && quote?.tradeTime ? `${quote.tradeDate} ${quote.tradeTime}` : "基于当前数据";
   $("analysisUpdatedAt").hidden = false;
   $("healthList").innerHTML = checks.map(healthCard).join("");
+}
+
+function analysisGuidance(aiAnalysis, fallbackPriority, supporting = [], risks = []) {
+  const guidance = aiAnalysis?.guidance;
+  if (guidance?.researchPriority) return guidance;
+  return {
+    researchPriority: fallbackPriority,
+    dataCompleteness: 0,
+    supportingEvidence: supporting,
+    confirmationConditions: ["补齐财务、公告与证据来源后再完成判断。"],
+    invalidationSignals: risks,
+    nextResearchActions: ["查看证据来源并重新生成分析。"]
+  };
+}
+
+function renderGuidancePanels(guidance, fallbackSupporting = [], fallbackRisks = []) {
+  $("positivePoints").innerHTML = decisionList(guidance?.supportingEvidence || fallbackSupporting, "暂无支持依据。");
+  $("confirmationConditions").innerHTML = decisionList(guidance?.confirmationConditions, "暂无待确认条件。");
+  $("negativePoints").innerHTML = decisionList(guidance?.invalidationSignals || fallbackRisks, "暂无失效信号。");
+  $("nextResearchActions").innerHTML = decisionList(guidance?.nextResearchActions, "暂无下一步动作。");
+  const completeness = Number(guidance?.dataCompleteness);
+  $("dataCompleteness").textContent = Number.isFinite(completeness) && completeness > 0 ? `数据完整度 ${completeness}%` : "待补充数据";
+  $("dataCompleteness").hidden = false;
 }
 
 function renderChart(candles) {
@@ -592,13 +787,13 @@ function conclusionText(company, rating, checks, risks, quote) {
   const good = checks.filter(check => check.level === "good").map(check => check.title);
   const weak = checks.filter(check => check.level === "risk").map(check => check.title);
   const priceText = quote?.realtime ? `实时行情显示涨跌幅为 ${Number(quote.changePercent || 0).toFixed(2)}%。` : "实时行情暂不可用，当前以本地分析数据为主。";
-  if (rating === "积极") {
+  if (rating === "优先研究") {
     return `${company} 当前基本面指标较稳，${good.slice(0, 2).join("、")}表现较好。${priceText} 可以继续关注盈利持续性和估值安全边际。`;
   }
-  if (rating === "谨慎") {
-    return `${company} 当前需要谨慎观察，${weak.slice(0, 2).join("、") || "部分核心指标"}存在压力，系统识别到 ${risks.length} 条风险信号。${priceText}`;
+  if (rating === "暂不进入候选") {
+    return `${company} 当前尚不满足进入候选池的条件，${weak.slice(0, 2).join("、") || "部分核心指标"}存在压力，系统识别到 ${risks.length} 条风险信号。${priceText}`;
   }
-  return `${company} 当前处于中性观察状态，基本面有支撑，但仍需关注${(weak[0] || "行业变化")}和短期价格波动。${priceText}`;
+  return `${company} 当前处于等待确认状态，基本面或行情已有部分支撑，但仍需核验${(weak[0] || "行业变化")}和短期价格波动。${priceText}`;
 }
 
 function positiveText(checks) {
@@ -774,6 +969,192 @@ async function monitorResearchTask(task, currentWorkflowGeneration, workflowSymb
   }
 }
 
+async function submitAuth(event) {
+  event.preventDefault();
+  const register = authView === "register";
+  const email = $("authEmail").value.trim();
+  const password = $("authPassword").value;
+  if (register && password !== $("authPasswordConfirm").value) {
+    setAuthFeedback("两次输入的密码不一致。");
+    return;
+  }
+  const button = $("authSubmitButton");
+  button.disabled = true;
+  button.textContent = register ? "创建中…" : "登录中…";
+  setAuthFeedback("");
+  try {
+    const user = await request(`/api/auth/${register ? "register" : "login"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        verificationCode: register ? $("authVerificationCode").value.trim() : undefined
+      })
+    });
+    authUser = user;
+    renderAccountState();
+    setAuthGateRequired(false);
+    const action = pendingAuthAction;
+    closeAuthDialog();
+    await initializeAuthenticatedWorkspace();
+    if (typeof action === "function") {
+      await action();
+    }
+  } catch (error) {
+    setAuthFeedback(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = register ? "创建账号" : "登录";
+  }
+}
+
+async function requestEmailVerificationCode() {
+  const email = $("authEmail").value.trim();
+  if (!email) {
+    setAuthFeedback("请先输入邮箱地址。");
+    $("authEmail").focus();
+    return;
+  }
+  const button = $("requestVerificationCode");
+  button.disabled = true;
+  setAuthFeedback("");
+  try {
+    const result = await request("/api/auth/verification-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    $("authVerificationHint").textContent = result.message || "验证码已发送。";
+    let remaining = 60;
+    button.textContent = `${remaining}s 后重发`;
+    window.clearInterval(verificationCountdownTimer);
+    verificationCountdownTimer = window.setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        window.clearInterval(verificationCountdownTimer);
+        button.disabled = false;
+        button.textContent = "获取验证码";
+        return;
+      }
+      button.textContent = `${remaining}s 后重发`;
+    }, 1000);
+  } catch (error) {
+    setAuthFeedback(error.message);
+    button.disabled = false;
+  }
+}
+
+async function requestPasswordReset(event) {
+  event.preventDefault();
+  const button = $("resetRequestForm").querySelector(".primary-action");
+  button.disabled = true;
+  setAuthFeedback("");
+  try {
+    const result = await request("/api/auth/password-reset/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: $("resetEmail").value.trim() })
+    });
+    setAuthFeedback(result.message);
+  } catch (error) {
+    setAuthFeedback(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function confirmPasswordReset(event) {
+  event.preventDefault();
+  const password = $("resetPassword").value;
+  if (password !== $("resetPasswordConfirm").value) {
+    setAuthFeedback("两次输入的密码不一致。");
+    return;
+  }
+  const button = $("resetConfirmForm").querySelector(".primary-action");
+  button.disabled = true;
+  try {
+    const result = await request("/api/auth/password-reset/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: resetToken, password })
+    });
+    setAuthFeedback(result.message);
+    window.setTimeout(() => openAuthDialog("login"), 700);
+  } catch (error) {
+    setAuthFeedback(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function logout() {
+  const button = $("logoutButton");
+  button.disabled = true;
+  try {
+    await request("/api/auth/logout", { method: "POST" });
+  } catch (error) {
+    if (error.status !== 401) {
+      $("watchlistActionStatus").textContent = `退出失败：${error.message}`;
+      button.disabled = false;
+      return;
+    }
+  }
+  authUser = null;
+  latestWatchlist = [];
+  renderAccountState();
+  setAuthGateRequired(true);
+  openAuthDialog("login");
+  setWorkspace("company");
+  button.disabled = false;
+}
+
+function openResetFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  resetToken = params.get("resetToken") || "";
+  if (resetToken) {
+    openAuthDialog("reset-confirm");
+  }
+}
+
+$("accountButton").addEventListener("click", () => {
+  if (authUser) {
+    setWorkspace("watchlist");
+  } else {
+    openAuthDialog("login");
+  }
+});
+$("logoutButton").addEventListener("click", logout);
+$("requestVerificationCode").addEventListener("click", requestEmailVerificationCode);
+document.querySelectorAll(".auth-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    authView = tab.dataset.authView || "login";
+    renderAuthView();
+  });
+});
+$("authForm").addEventListener("submit", submitAuth);
+$("forgotPasswordButton").addEventListener("click", () => {
+  authView = "reset-request";
+  renderAuthView();
+  $("resetEmail").focus();
+});
+$("backToLoginButton").addEventListener("click", () => {
+  authView = "login";
+  renderAuthView();
+});
+$("resetRequestForm").addEventListener("submit", requestPasswordReset);
+$("resetConfirmForm").addEventListener("submit", confirmPasswordReset);
+$("resetConfirmBackButton").addEventListener("click", () => {
+  authView = "login";
+  resetToken = "";
+  renderAuthView();
+});
+document.addEventListener("click", event => {
+  if (event.target.closest("[data-open-auth]")) {
+    openAuthDialog("login");
+  }
+});
+
 function delay(milliseconds) {
   return new Promise(resolve => window.setTimeout(resolve, milliseconds));
 }
@@ -870,8 +1251,111 @@ async function selectSymbol(nextSymbol, options = {}) {
   return true;
 }
 
+function renderDailyRecommendations(result) {
+  const items = Array.isArray(result?.items) ? result.items : [];
+  const top = items[0];
+  if (!top) return null;
+  const scoreText = value => Number.isFinite(Number(value)) ? Number(value).toFixed(1) : "--";
+  document.querySelector(".scan-lead-body h2").textContent = top.name;
+  document.querySelector(".scan-symbol").textContent = `${top.symbol}.${top.exchange} · ${top.industry || "待分类"}`;
+  document.querySelector(".scan-lead-topline strong").textContent = `${scoreText(top.score)} / 100`;
+  document.querySelector(".scan-thesis").textContent = "基于当日全市场行情、流动性与估值约束生成的候选。进入公司研究后，请结合原始证据和风险信号判断。";
+  const chips = document.querySelectorAll(".scan-chips span");
+  [top.qualityScore, top.trendScore, top.liquidityScore].forEach((value, index) => {
+    if (chips[index]) chips[index].textContent = ["估值约束", "趋势", "流动性"][index] + " " + scoreText(value);
+  });
+  const leadResearchButton = document.querySelector(".scan-lead-footer .scan-research-button");
+  leadResearchButton.dataset.symbol = top.symbol;
+  leadResearchButton.disabled = false;
+  leadResearchButton.textContent = "查看研究";
+  leadResearchButton.onclick = async () => {
+    setWorkspace("company");
+    await selectSymbol(top.symbol);
+  };
+
+  const scores = [
+    ["趋势结构", "日内动量与振幅约束", top.trendScore],
+    ["估值约束", "PE 与 PB 的基础筛选", top.qualityScore],
+    ["流动性", "成交额与换手活跃度", top.liquidityScore],
+    ["风险扣分", "过高振幅与极端涨跌", `−${scoreText(top.riskPenalty)}`]
+  ];
+  document.querySelectorAll(".scan-score-list > div").forEach((row, index) => {
+    const [name, detail, value] = scores[index];
+    row.querySelector("strong").textContent = name;
+    row.querySelector("small").textContent = detail;
+    row.querySelector("dd").textContent = value;
+  });
+  const rows = $("scanCandidateRows");
+  rows.innerHTML = items.map(item => `
+    <tr data-scan-kind="all trend quality">
+      <td><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.symbol)}.${escapeHtml(item.exchange)} · ${escapeHtml(item.industry || "待分类")}</span></td>
+      <td><b>${scoreText(item.score)}</b></td>
+      <td><i style="--score:${Math.max(0, Math.min(100, Number(item.trendScore) || 0))}%"></i></td>
+      <td>${scoreText(item.qualityScore)}</td><td>${scoreText(item.liquidityScore)}</td>
+      <td class="${Number(item.changePercent) >= 0 ? "up" : "down"}">${formatSigned(item.changePercent)}%</td>
+      <td><button class="scan-research-button" type="button" data-symbol="${escapeHtml(item.symbol)}">研究 →</button></td>
+    </tr>`).join("");
+  document.querySelector(".scan-candidates-heading p").textContent = `共 ${items.length} 只 · 已按综合评分排序 · 涨跌颜色仅表示市场表现`;
+  const sourceLabel = String(result.source || "").includes("sina") ? "新浪备用行情" : "东方财富行情";
+  document.querySelector(".scan-data-note").textContent = `${sourceLabel} · 全市场 ${result.universeSize.toLocaleString("zh-CN")} 只 · ${formatDateTime(result.scannedAt)}`;
+  document.querySelector(".scan-top-picks").setAttribute("aria-busy", "false");
+  $("retryMarketScan").hidden = true;
+  window.clearTimeout(dailyRecommendationRetryTimer);
+  rows.querySelectorAll(".scan-research-button").forEach(button => {
+    button.addEventListener("click", async () => {
+      setWorkspace("company");
+      await selectSymbol(button.dataset.symbol);
+    });
+  });
+  return top;
+}
+
+async function loadDailyRecommendations() {
+  const result = await request("/api/market/recommendations");
+  return renderDailyRecommendations(result);
+}
+
+function showDailyRecommendationError(error) {
+  const message = error?.name === "AbortError"
+    ? "全市场扫描仍在进行，10 秒后将自动重试。"
+    : "行情源连接暂时中断，10 秒后将自动重试。";
+  document.querySelector(".scan-lead-topline > span").textContent = "行情源等待恢复";
+  document.querySelector(".scan-lead-body h2").textContent = "暂时无法完成今日扫描";
+  document.querySelector(".scan-symbol").textContent = "不会展示过期或固定候选";
+  document.querySelector(".scan-thesis").textContent = "外部行情快照未能完整读取。你可以立即重新读取，或等待系统自动重试。";
+  document.querySelector(".scan-lead-footer .scan-research-button").disabled = true;
+  document.querySelector(".scan-lead-footer .scan-research-button").textContent = "等待行情";
+  $("scanCandidateRows").innerHTML = '<tr><td colspan="7">行情源连接中断，尚未生成今日候选。</td></tr>';
+  document.querySelector(".scan-candidates-heading p").textContent = "等待当日全市场行情快照；不会回退到旧候选。";
+  document.querySelector(".scan-data-note").textContent = message;
+  document.querySelector(".scan-top-picks").setAttribute("aria-busy", "false");
+  $("retryMarketScan").hidden = false;
+}
+
+async function applyDailyRecommendation(top) {
+  if (!top?.symbol) return;
+  symbol = top.symbol;
+  $("symbolInput").value = symbol;
+  await refresh();
+  await suggestStocks(symbol);
+  openResetFromUrl();
+}
+
+function scheduleDailyRecommendationRetry() {
+  window.clearTimeout(dailyRecommendationRetryTimer);
+  dailyRecommendationRetryTimer = window.setTimeout(async () => {
+    try {
+      const top = await loadDailyRecommendations();
+      await applyDailyRecommendation(top);
+    } catch (error) {
+      showDailyRecommendationError(error);
+      scheduleDailyRecommendationRetry();
+    }
+  }, 10_000);
+}
+
 function ratingClass(rating) {
-  return rating === "积极" ? "positive" : rating === "谨慎" ? "cautious" : "neutral";
+  return rating === "优先研究" || rating === "积极" ? "positive" : rating === "暂不进入候选" || rating === "谨慎" ? "cautious" : "neutral";
 }
 
 function analysisMeta(aiAnalysis) {
@@ -1082,6 +1566,7 @@ const productNav = $("productNav");
 const mobileMenuButton = $("mobileMenuButton");
 const navBackdrop = $("navBackdrop");
 const workspaceLabels = {
+  marketScan: "今日优选",
   company: "公司研究",
   analysis: "AI 分析",
   evidence: "证据来源",
@@ -1107,7 +1592,7 @@ mobileMenuButton.addEventListener("click", () => {
 navBackdrop.addEventListener("click", () => setNavigationOpen(false));
 
 function setWorkspace(view, updateHistory = true) {
-  const nextView = workspaceViews[view] ? view : "company";
+  const nextView = workspaceViews[view] ? view : "marketScan";
   Object.entries(workspaceViews).forEach(([name, element]) => {
     element.hidden = name !== nextView;
   });
@@ -1144,6 +1629,42 @@ function setWorkspace(view, updateHistory = true) {
 $("newResearchButton").addEventListener("click", () => {
   setWorkspace("company");
   $("symbolInput").focus();
+});
+
+document.querySelectorAll(".scan-filter").forEach(button => {
+  button.addEventListener("click", () => {
+    const filter = button.dataset.scanFilter || "all";
+    document.querySelectorAll(".scan-filter").forEach(item => {
+      const selected = item === button;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-pressed", String(selected));
+    });
+    document.querySelectorAll("#scanCandidateRows tr").forEach(row => {
+      row.hidden = !row.dataset.scanKind?.split(" ").includes(filter);
+    });
+  });
+});
+
+$("retryMarketScan").addEventListener("click", async () => {
+  $("retryMarketScan").hidden = true;
+  document.querySelector(".scan-data-note").textContent = "正在重新读取今日全市场候选…";
+  document.querySelector(".scan-top-picks").setAttribute("aria-busy", "true");
+  try {
+    const top = await loadDailyRecommendations();
+    await applyDailyRecommendation(top);
+  } catch (error) {
+    showDailyRecommendationError(error);
+    scheduleDailyRecommendationRetry();
+  }
+});
+
+document.querySelectorAll(".scan-research-button[data-symbol]").forEach(button => {
+  button.addEventListener("click", async () => {
+    const nextSymbol = button.dataset.symbol;
+    if (!nextSymbol) return;
+    setWorkspace("company");
+    await selectSymbol(nextSymbol);
+  });
 });
 
 document.querySelectorAll(".product-link").forEach(link => {
@@ -1187,9 +1708,13 @@ document.querySelectorAll(".query-suggestions button").forEach(button => {
 
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
-    setNavigationOpen(false);
+    if (!$("authDialog").hidden) {
+      closeAuthDialog();
+    } else {
+      setNavigationOpen(false);
+    }
   }
-  if (event.key === "/" && document.activeElement?.tagName !== "INPUT") {
+  if (event.key === "/" && $("authDialog").hidden && document.activeElement?.tagName !== "INPUT") {
     event.preventDefault();
     $("symbolInput").focus();
   }
@@ -1205,7 +1730,7 @@ window.addEventListener("resize", () => {
 });
 
 function workspaceFromHash() {
-  return document.querySelector(`.product-link[href="${window.location.hash}"]`)?.dataset.workspace || "company";
+  return document.querySelector(`.product-link[href="${window.location.hash}"]`)?.dataset.workspace || "marketScan";
 }
 
 function syncWorkspaceFromHash() {
@@ -1221,6 +1746,33 @@ window.addEventListener("hashchange", syncWorkspaceFromHash);
 const initialWorkspace = workspaceFromHash();
 setWorkspace(initialWorkspace, false);
 
-refresh().then(() => suggestStocks(symbol)).catch(error => {
+async function initializeAuthenticatedWorkspace() {
+  try {
+    const top = await loadDailyRecommendations();
+    await applyDailyRecommendation(top);
+  } catch (error) {
+    showDailyRecommendationError(error);
+    scheduleDailyRecommendationRetry();
+  }
+}
+
+async function initializeApp() {
+  try {
+    await loadSession();
+  } catch (error) {
+    $("accountStatusDetail").textContent = error.message;
+    setAuthGateRequired(true);
+    openAuthDialog("login");
+    setAuthFeedback(error.message);
+    return;
+  }
+  if (!authUser) {
+    openAuthDialog("login");
+    return;
+  }
+  await initializeAuthenticatedWorkspace();
+}
+
+initializeApp().catch(error => {
   $("analysisConclusion").textContent = `后端服务未就绪：${error.message}`;
 });

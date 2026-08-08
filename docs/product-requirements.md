@@ -82,6 +82,7 @@ FinSight AI 是面向个人投资研究者、金融技术学习者和投研工�
 - PostgreSQL 全文检索与 pgvector 向量检索。
 - RRF 融合、语义 embedding 和 cross-encoder rerank。
 - 证据问答和版本化 AI 投研报告。
+- 邮箱账户、服务端会话、个人关注列表和密码重置入口。
 - RabbitMQ 工作流、Redis single-flight 和超时恢复。
 - Dashboard、Actuator、Prometheus 指标和 RAG 评测。
 
@@ -138,6 +139,6 @@ FinSight AI 是面向个人投资研究者、金融技术学习者和投研工�
 1. 扩大真实公告和财报评测集。
 2. 建立跨提交的 RAG 指标趋势。
 3. 增加 workflow transition history 与 DLQ replay API。
-4. 增加用户认证、研究空间和审计日志。
+4. 增加研究历史、报告收藏、个人笔记和审计日志。
 5. 增加模型熔断、资源隔离和推理成本统计。
 6. 建立演示环境和只读公开数据集。

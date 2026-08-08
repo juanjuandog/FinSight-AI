@@ -60,8 +60,14 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-body.navigation-open {
+body.navigation-open,
+body.auth-open,
+body.auth-required {
   overflow: hidden;
+}
+
+body.auth-required .workspace-shell {
+  visibility: hidden;
 }
 
 button,

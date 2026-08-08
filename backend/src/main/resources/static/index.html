@@ -9,15 +9,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=20260728i">
-  <link rel="stylesheet" href="/shell.css?v=20260728i">
-  <link rel="stylesheet" href="/collections.css?v=20260728i">
-  <link rel="stylesheet" href="/workspaces.css?v=20260728i">
+  <link rel="stylesheet" href="/styles.css?v=20260807d">
+  <link rel="stylesheet" href="/shell.css?v=20260807d">
+  <link rel="stylesheet" href="/collections.css?v=20260807d">
+  <link rel="stylesheet" href="/workspaces.css?v=20260808g">
+  <link rel="stylesheet" href="/market-scan.css?v=20260808a">
 </head>
-<body class="pearl-workspace">
+<body class="pearl-workspace auth-required">
   <div class="workspace-shell">
     <aside id="productNav" class="workspace-nav" aria-label="主导航">
-      <a class="rail-brand" href="#companyWorkspace" data-workspace-link="company" aria-label="FinSight AI 首页">
+      <a class="rail-brand" href="#marketScanWorkspace" data-workspace-link="marketScan" aria-label="FinSight AI 首页">
         <img class="brand-mark" src="/brand-favicon.svg" alt="" aria-hidden="true">
         <span>
           <strong>FinSight</strong>
@@ -28,7 +29,8 @@
       <button id="newResearchButton" class="new-research-button" type="button">新建研究</button>
 
       <nav class="rail-links" aria-label="研究功能">
-        <a class="product-link active" data-workspace="company" href="#companyWorkspace" aria-current="page">公司研究</a>
+        <a class="product-link active" data-workspace="marketScan" href="#marketScanWorkspace" aria-current="page">今日优选</a>
+        <a class="product-link" data-workspace="company" href="#companyWorkspace">公司研究</a>
         <a class="product-link" data-workspace="analysis" href="#analysisWorkspace">AI 分析</a>
         <a class="product-link" data-workspace="evidence" href="#evidenceWorkspace">证据来源</a>
         <a class="product-link" data-workspace="events" href="#eventsWorkspace">近期事件</a>
@@ -36,6 +38,13 @@
       </nav>
 
       <div class="rail-spacer"></div>
+      <div class="rail-account">
+        <button id="accountButton" class="account-button" type="button">
+          <span id="accountStatusLabel">登录以保存研究</span>
+          <small id="accountStatusDetail">关注列表与研究记录仅对你可见</small>
+        </button>
+        <button id="logoutButton" class="account-logout" type="button" hidden>退出登录</button>
+      </div>
       <div class="rail-status">
         <span id="marketStatus" class="market-status">行情待连接</span>
         <span id="universeStatus" class="top-updated">更新时间 --</span>
@@ -49,7 +58,7 @@
         <span id="workspaceLabel" class="workspace-label">公司研究</span>
         <label class="stock-search">
           <span class="sr-only">搜索公司或股票代码</span>
-          <input id="symbolInput" value="600519" maxlength="16" list="stockSuggestions" placeholder="搜索股票、公司或代码">
+          <input id="symbolInput" value="" maxlength="16" list="stockSuggestions" placeholder="搜索股票、公司或代码">
           <datalist id="stockSuggestions"></datalist>
           <button id="symbolSearchButton" type="button">搜索</button>
         </label>
@@ -58,8 +67,8 @@
       <main id="companyWorkspace" class="workspace-view company-workspace" data-workspace-view="company">
         <header class="company-heading">
           <div class="company-identity">
-            <p id="companyMeta" class="company-symbol">600519.SH</p>
-            <h1 id="companyName">贵州茅台</h1>
+            <p id="companyMeta" class="company-symbol">等待今日优选</p>
+            <h1 id="companyName">正在读取候选</h1>
           </div>
           <div id="marketQuote" class="market-summary"><span>行情加载中</span></div>
         </header>
@@ -95,6 +104,68 @@
         </section>
       </main>
 
+      <main id="marketScanWorkspace" class="workspace-view market-scan-workspace" data-workspace-view="marketScan" hidden>
+        <header class="scan-heading">
+          <div>
+            <h1>今日优选</h1>
+            <p>基于趋势结构、基本面与资金流的综合排序；进入公司研究前请核验原始证据。</p>
+          </div>
+          <div class="scan-filters" aria-label="优选排序方式">
+            <button class="scan-filter active" type="button" data-scan-filter="all" aria-pressed="true">综合</button>
+            <button class="scan-filter" type="button" data-scan-filter="trend" aria-pressed="false">趋势</button>
+            <button class="scan-filter" type="button" data-scan-filter="quality" aria-pressed="false">质量</button>
+          </div>
+        </header>
+
+        <section class="scan-top-picks" aria-label="综合评分最高的候选" aria-busy="true">
+          <article class="scan-lead-card">
+            <div class="scan-lead-topline">
+              <span>正在同步今日候选</span>
+              <strong>-- / 100</strong>
+            </div>
+            <div class="scan-lead-body">
+              <div>
+                <h2>正在读取全市场</h2>
+                <p class="scan-symbol">当日行情与筛选条件加载中</p>
+              </div>
+              <p class="scan-thesis">将在同步完成后展示当天排名第一的候选、评分构成与进入公司研究的入口。</p>
+            </div>
+            <footer class="scan-lead-footer">
+              <div class="scan-chips" aria-label="评分明细"><span>估值约束 --</span><span>趋势 --</span><span>流动性 --</span></div>
+              <button class="secondary-action scan-research-button" type="button" disabled>同步中</button>
+            </footer>
+          </article>
+
+          <article class="scan-score-card" aria-labelledby="scanScoreTitle">
+            <h2 id="scanScoreTitle">评分构成</h2>
+            <dl class="scan-score-list">
+              <div><dt><span>01</span><strong>趋势结构</strong><small>等待行情快照</small></dt><dd>--</dd></div>
+              <div><dt><span>02</span><strong>估值约束</strong><small>等待全市场筛选</small></dt><dd>--</dd></div>
+              <div><dt><span>03</span><strong>流动性</strong><small>等待成交数据</small></dt><dd>--</dd></div>
+              <div><dt><span>04</span><strong>风险扣分</strong><small>等待风险过滤</small></dt><dd>--</dd></div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="scan-candidates" aria-labelledby="candidatePoolHeading">
+          <header class="scan-candidates-heading">
+            <div><h2 id="candidatePoolHeading">候选池</h2><p>共 24 只 · 已按综合评分排序 · 涨跌颜色仅表示市场表现</p></div>
+            <div class="scan-data-actions">
+              <span class="scan-data-note" role="status">正在同步今日全市场候选…</span>
+              <button id="retryMarketScan" class="scan-retry-button" type="button" hidden>重新读取</button>
+            </div>
+          </header>
+          <div class="scan-table-wrap">
+            <table class="scan-table">
+              <thead><tr><th>公司</th><th>综合分</th><th>趋势结构</th><th>基本面</th><th>资金流</th><th>今日表现</th><th>操作</th></tr></thead>
+              <tbody id="scanCandidateRows">
+                <tr><td colspan="7">正在同步当日全市场候选，请稍候…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
       <main id="analysisWorkspace" class="workspace-view analysis-workspace" data-workspace-view="analysis" hidden>
         <header class="view-heading">
           <div>
@@ -110,7 +181,10 @@
               <p id="analysisUpdatedAt" class="analysis-meta" hidden>等待分析</p>
               <div id="ratingBadge" class="rating neutral">待分析</div>
             </div>
-            <strong id="confidenceScore" class="confidence-score pending" hidden>置信度待生成</strong>
+            <div class="analysis-quality-meta">
+              <strong id="confidenceScore" class="confidence-score pending" hidden>置信度待生成</strong>
+              <span id="dataCompleteness" class="data-completeness" hidden>数据完整度待生成</span>
+            </div>
           </div>
           <section id="analysisProgress" class="analysis-progress" aria-live="polite" hidden>
             <div class="analysis-progress-copy">
@@ -125,15 +199,23 @@
               <li data-progress-stage="complete">保存报告</li>
             </ol>
           </section>
-          <p id="analysisConclusion" class="analysis-conclusion">生成分析后，这里会直接给出结论、理由与风险。</p>
+          <p id="analysisConclusion" class="analysis-conclusion">生成分析后，这里会直接给出研究优先级、确认条件、失效信号和下一步动作。</p>
           <div class="analysis-columns">
             <article>
-              <h2>支持因素</h2>
+              <h2>支持依据</h2>
               <div id="positivePoints" class="decision-list">暂无核心理由</div>
             </article>
             <article>
-              <h2>风险因素</h2>
+              <h2>待确认条件</h2>
+              <div id="confirmationConditions" class="decision-list">生成分析后显示待确认条件</div>
+            </article>
+            <article>
+              <h2>失效信号</h2>
               <div id="negativePoints" class="decision-list">暂无主要风险</div>
+            </article>
+            <article>
+              <h2>下一步研究动作</h2>
+              <div id="nextResearchActions" class="decision-list">生成分析后显示下一步动作</div>
             </article>
           </div>
           <button id="openAnalysisEvidence" class="text-action" type="button">查看相关证据</button>
@@ -161,8 +243,8 @@
 
         <section class="evidence-query-panel">
           <div class="evidence-company-context">
-            <span id="evidenceCompanySymbol">600519.SH</span>
-            <strong id="evidenceCompanyName">贵州茅台</strong>
+            <span id="evidenceCompanySymbol">600900.SH</span>
+            <strong id="evidenceCompanyName">长江电力</strong>
           </div>
           <div class="evidence-question-box">
             <label class="sr-only" for="searchInput">输入证据检索问题</label>
@@ -191,7 +273,7 @@
         <header class="view-heading">
           <div>
             <h1 id="eventsHeading">公司研究时间线</h1>
-            <p><strong id="eventCompanyName">贵州茅台</strong><span id="eventCompanySymbol">600519.SH</span> 的公开披露、指标变化和风险信号。</p>
+            <p><strong id="eventCompanyName">长江电力</strong><span id="eventCompanySymbol">600900.SH</span> 的公开披露、指标变化和风险信号。</p>
           </div>
         </header>
         <section class="events-panel" aria-labelledby="eventsHeading">
@@ -226,6 +308,75 @@
 
   <div id="navBackdrop" class="nav-backdrop" hidden></div>
 
-  <script src="/app.js?v=20260728i"></script>
+  <div id="authDialog" class="auth-dialog auth-gate">
+    <div class="auth-scrim"></div>
+    <section class="auth-panel" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <div class="auth-heading">
+        <h2 id="authTitle">登录 FinSight AI</h2>
+        <p id="authIntro">登录后开始你的股票研究。</p>
+      </div>
+      <div class="auth-tabs" role="tablist" aria-label="账户操作">
+        <button class="auth-tab active" data-auth-view="login" type="button" role="tab" aria-selected="true">登录</button>
+        <button class="auth-tab" data-auth-view="register" type="button" role="tab" aria-selected="false">注册</button>
+      </div>
+      <form id="authForm" class="auth-form">
+        <label for="authEmail">邮箱</label>
+        <input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="name@example.com">
+        <label for="authPassword">密码</label>
+        <div class="password-field">
+          <input id="authPassword" name="password" type="password" autocomplete="current-password" required placeholder="至少 10 位，包含字母和数字">
+          <button class="password-toggle" type="button" data-password-target="authPassword" aria-label="显示密码" aria-pressed="false">
+            <svg class="password-toggle-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </button>
+        </div>
+        <label id="authPasswordConfirmLabel" for="authPasswordConfirm" hidden>确认密码</label>
+        <div id="authPasswordConfirmField" class="password-field" hidden>
+          <input id="authPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" placeholder="再次输入密码">
+          <button class="password-toggle" type="button" data-password-target="authPasswordConfirm" aria-label="显示确认密码" aria-pressed="false">
+            <svg class="password-toggle-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </button>
+        </div>
+        <div id="authVerificationFields" class="auth-verification-fields" hidden>
+          <label for="authVerificationCode">邮箱验证码</label>
+          <div class="auth-code-row">
+            <input id="authVerificationCode" name="verificationCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码">
+            <button id="requestVerificationCode" class="auth-secondary-action" type="button">获取验证码</button>
+          </div>
+          <p id="authVerificationHint" class="auth-helper">请先获取邮箱验证码。</p>
+        </div>
+        <button id="authSubmitButton" class="primary-action" type="submit">登录</button>
+      </form>
+      <button id="forgotPasswordButton" class="auth-secondary-action" type="button">忘记密码？</button>
+      <form id="resetRequestForm" class="auth-form" hidden>
+        <p class="auth-form-intro">输入注册邮箱。如果账号存在，我们会发送密码重置链接。</p>
+        <label for="resetEmail">注册邮箱</label>
+        <input id="resetEmail" type="email" autocomplete="email" required placeholder="name@example.com">
+        <button class="primary-action" type="submit">发送重置邮件</button>
+        <button id="backToLoginButton" class="auth-secondary-action" type="button">返回登录</button>
+      </form>
+      <form id="resetConfirmForm" class="auth-form" hidden>
+        <p class="auth-form-intro">设置一个新的登录密码。</p>
+        <label for="resetPassword">新密码</label>
+        <div class="password-field">
+          <input id="resetPassword" type="password" autocomplete="new-password" required placeholder="至少 10 位，包含字母和数字">
+          <button class="password-toggle" type="button" data-password-target="resetPassword" aria-label="显示新密码" aria-pressed="false">
+            <svg class="password-toggle-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </button>
+        </div>
+        <label for="resetPasswordConfirm">确认新密码</label>
+        <div class="password-field">
+          <input id="resetPasswordConfirm" type="password" autocomplete="new-password" required placeholder="再次输入新密码">
+          <button class="password-toggle" type="button" data-password-target="resetPasswordConfirm" aria-label="显示确认新密码" aria-pressed="false">
+            <svg class="password-toggle-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </button>
+        </div>
+        <button class="primary-action" type="submit">更新密码</button>
+        <button id="resetConfirmBackButton" class="auth-secondary-action" type="button">返回登录</button>
+      </form>
+      <p id="authFeedback" class="auth-feedback" role="status" aria-live="polite"></p>
+    </section>
+  </div>
+
+  <script src="/app.js?v=20260808h"></script>
 </body>
 </html>

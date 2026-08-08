@@ -2,6 +2,25 @@
 
 FinSight exposes a research-facing API on top of the lower-level workflow, retrieval, and report modules. The goal is to make the platform feel like an AI equity research system instead of a collection of isolated demos.
 
+## User session
+
+Public market and research reads remain available without an account. Personal APIs use a 14-day `HttpOnly` session cookie and a double-submit CSRF token.
+
+1. Call `GET /api/auth/session` to receive the current user and `csrfToken`.
+2. Send the returned token as `X-CSRF-Token` on authentication and personal write requests.
+3. Preserve the `finsight_csrf` and `finsight_session` cookies returned by the server.
+
+Authentication endpoints:
+
+- `POST /api/auth/register`: email and password registration.
+- `POST /api/auth/login`: create a session.
+- `POST /api/auth/logout`: revoke the current session.
+- `POST /api/auth/password-reset/request`: request a generic reset response and optional SMTP mail.
+- `POST /api/auth/password-reset/confirm`: consume a one-time reset token.
+- `GET/POST/DELETE /api/watchlist`: private watchlist for the authenticated user.
+
+The legacy `X-Finsight-User` header is no longer trusted.
+
 ## Research Task
 
 Submit a recoverable research task for one company:

@@ -28,6 +28,11 @@ spring:
         default-requeue-rejected: false
 
 finsight:
+  auth:
+    secure-cookie: false
+    email-enabled: false
+    mail-from: ${FINSIGHT_AUTH_MAIL_FROM:noreply@finsight.local}
+    public-base-url: ${FINSIGHT_PUBLIC_BASE_URL:http://localhost:8080}
   ai-service-url: http://localhost:8001
   ai-service:
     enabled: false
@@ -40,6 +45,7 @@ finsight:
     zone: Asia/Shanghai
     stock-universe-cron: "0 20 8 * * MON-FRI"
     batch-analysis-cron: "0 45 8 * * MON-FRI"
+    daily-recommendation-cron: "0 10 15 * * MON-FRI"
     batch-limit: 20
   embedding:
     dimension: 384

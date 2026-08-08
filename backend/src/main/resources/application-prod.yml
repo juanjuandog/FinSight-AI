@@ -19,6 +19,14 @@ spring:
       url: ${SPRING_DATA_REDIS_URL:redis://localhost:6379}
       repositories:
         enabled: false
+  mail:
+    host: ${SPRING_MAIL_HOST:}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SPRING_MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SPRING_MAIL_STARTTLS_ENABLE:true}
 
 management:
   health:
@@ -26,6 +34,11 @@ management:
       enabled: true
 
 finsight:
+  auth:
+    secure-cookie: ${FINSIGHT_AUTH_SECURE_COOKIE:true}
+    email-enabled: ${FINSIGHT_AUTH_EMAIL_ENABLED:false}
+    mail-from: ${FINSIGHT_AUTH_MAIL_FROM:noreply@finsight.local}
+    public-base-url: ${FINSIGHT_PUBLIC_BASE_URL:http://localhost:8080}
   redis-url: ${FINSIGHT_REDIS_URL:redis://localhost:6379}
   rabbitmq-url: ${FINSIGHT_RABBITMQ_URL:amqp://finsight:finsight@localhost:5672}
   elasticsearch-url: ${FINSIGHT_ELASTICSEARCH_URL:http://localhost:9200}

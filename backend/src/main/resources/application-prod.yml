@@ -32,6 +32,8 @@ management:
   health:
     rabbit:
       enabled: true
+    mail:
+      enabled: ${MANAGEMENT_HEALTH_MAIL_ENABLED:false}
 
 finsight:
   auth:

@@ -25,16 +25,19 @@ public class DailyRecommendationService {
     private final SinaMarketScreenerClient fallbackScreenerClient;
     private final ZoneId zone;
     private final int resultLimit;
+    private final RecommendationStrategyProperties strategy;
     private volatile DailyRecommendations latest;
 
     public DailyRecommendationService(
             EastmoneyMarketScreenerClient screenerClient,
             SinaMarketScreenerClient fallbackScreenerClient,
+            RecommendationStrategyProperties strategy,
             @Value("${finsight.scheduler.zone:Asia/Shanghai}") String zone,
             @Value("${finsight.recommendations.result-limit:24}") int resultLimit
     ) {
         this.screenerClient = screenerClient;
         this.fallbackScreenerClient = fallbackScreenerClient;
+        this.strategy = strategy;
         this.zone = ZoneId.of(zone);
         this.resultLimit = Math.max(5, Math.min(resultLimit, 100));
     }
@@ -74,33 +77,65 @@ public class DailyRecommendationService {
                         candidate.row().changePercent()))
                 .toList();
         if (items.isEmpty()) throw new IllegalStateException("market screener produced no eligible candidates");
-        latest = new DailyRecommendations(LocalDate.now(zone), OffsetDateTime.now(zone), market.size(), source, items);
+        latest = new DailyRecommendations(
+                LocalDate.now(zone), OffsetDateTime.now(zone), market.size(), source, strategy.version(), items
+        );
         return latest;
     }
 
     private boolean eligible(MarketScreenerRow row) {
-        return row.price().compareTo(BigDecimal.valueOf(2)) >= 0
-                && row.amount().compareTo(BigDecimal.valueOf(80_000_000L)) >= 0
+        RecommendationStrategyProperties.Eligibility eligibility = strategy.eligibility();
+        return row.price().compareTo(eligibility.minimumPrice()) >= 0
+                && row.amount().compareTo(eligibility.minimumAmount()) >= 0
                 && !row.name().contains("ST") && !row.name().contains("退")
-                && row.changePercent().compareTo(BigDecimal.valueOf(-9.5)) > 0;
+                && row.changePercent().compareTo(eligibility.minimumChangePercent()) > 0;
     }
 
     private ScoredCandidate score(MarketScreenerRow row, BigDecimal maximumAmount) {
+        RecommendationStrategyProperties.Trend trendRules = strategy.trend();
+        RecommendationStrategyProperties.Risk riskRules = strategy.risk();
+        RecommendationStrategyProperties.Weights weights = strategy.weights();
         double change = row.changePercent().doubleValue();
         double amplitude = row.amplitude().doubleValue();
-        double trend = clamp(52 + change * 7 - Math.max(0, amplitude - 5) * 2.2);
+        double trend = clamp(
+                trendRules.baseScore().doubleValue()
+                        + change * trendRules.changeMultiplier().doubleValue()
+                        - Math.max(0, amplitude - trendRules.amplitudeThreshold().doubleValue())
+                        * trendRules.amplitudePenaltyMultiplier().doubleValue()
+        );
         double liquidity = maximumAmount.signum() == 0 ? 0 : clamp(Math.log1p(row.amount().doubleValue()) / Math.log1p(maximumAmount.doubleValue()) * 100);
         double valuation = valuationScore(row.pe(), row.pb());
-        double risk = clamp(Math.max(0, amplitude - 7) * 1.4 + Math.max(0, Math.abs(change) - 7) * 2.2);
-        BigDecimal total = BigDecimal.valueOf(clamp(trend * .48 + liquidity * .24 + valuation * .28 - risk))
+        double risk = clamp(
+                Math.max(0, amplitude - riskRules.amplitudeThreshold().doubleValue())
+                        * riskRules.amplitudePenaltyMultiplier().doubleValue()
+                        + Math.max(0, Math.abs(change) - riskRules.absoluteChangeThreshold().doubleValue())
+                        * riskRules.changePenaltyMultiplier().doubleValue()
+        );
+        BigDecimal total = BigDecimal.valueOf(clamp(
+                        trend * weights.trend().doubleValue()
+                                + liquidity * weights.liquidity().doubleValue()
+                                + valuation * weights.valuation().doubleValue()
+                                - risk
+                ))
                 .setScale(1, RoundingMode.HALF_UP);
         return new ScoredCandidate(row, total, round(trend), round(valuation), round(liquidity), round(risk));
     }
 
     private double valuationScore(BigDecimal pe, BigDecimal pb) {
-        double score = 68;
-        if (pe.signum() > 0) score += pe.doubleValue() <= 45 ? 12 : pe.doubleValue() <= 80 ? 3 : -12;
-        if (pb.signum() > 0) score += pb.doubleValue() <= 8 ? 8 : -10;
+        RecommendationStrategyProperties.Valuation rules = strategy.valuation();
+        double score = rules.baseScore().doubleValue();
+        if (pe.signum() > 0) {
+            score += pe.compareTo(rules.preferredPeMax()) <= 0
+                    ? rules.preferredPeBonus().doubleValue()
+                    : pe.compareTo(rules.acceptablePeMax()) <= 0
+                    ? rules.acceptablePeBonus().doubleValue()
+                    : -rules.pePenalty().doubleValue();
+        }
+        if (pb.signum() > 0) {
+            score += pb.compareTo(rules.preferredPbMax()) <= 0
+                    ? rules.preferredPbBonus().doubleValue()
+                    : -rules.pbPenalty().doubleValue();
+        }
         return clamp(score);
     }
 
@@ -109,6 +144,6 @@ public class DailyRecommendationService {
 
     private record ScoredCandidate(MarketScreenerRow row, BigDecimal score, BigDecimal trendScore, BigDecimal qualityScore, BigDecimal liquidityScore, BigDecimal riskPenalty) { }
 
-    public record DailyRecommendations(LocalDate tradeDate, OffsetDateTime scannedAt, int universeSize, String source, List<RecommendationItem> items) { }
+    public record DailyRecommendations(LocalDate tradeDate, OffsetDateTime scannedAt, int universeSize, String source, String strategyVersion, List<RecommendationItem> items) { }
     public record RecommendationItem(String symbol, String name, String exchange, String industry, BigDecimal score, BigDecimal trendScore, BigDecimal qualityScore, BigDecimal liquidityScore, BigDecimal riskPenalty, BigDecimal changePercent) { }
 }

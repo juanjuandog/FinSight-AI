@@ -21,6 +21,21 @@ Authentication endpoints:
 
 The legacy `X-Finsight-User` header is no longer trusted.
 
+## Daily Recommendations
+
+```bash
+curl http://localhost:8080/api/market/recommendations
+```
+
+The response includes the market snapshot source, scan time, universe size,
+ranked candidates, score breakdown, and `strategyVersion`. The version identifies
+the exact scoring configuration used for that recommendation run.
+
+Scoring thresholds and weights are configured under
+`finsight.recommendations.strategy` in `application.yml`. The trend, liquidity,
+and valuation weights must add up to `1.0`; invalid combinations stop the
+application at startup instead of silently changing the score scale.
+
 ## Research Task
 
 Submit a recoverable research task for one company:

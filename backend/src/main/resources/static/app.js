@@ -1297,7 +1297,8 @@ function renderDailyRecommendations(result) {
     </tr>`).join("");
   document.querySelector(".scan-candidates-heading p").textContent = `共 ${items.length} 只 · 已按综合评分排序 · 涨跌颜色仅表示市场表现`;
   const sourceLabel = String(result.source || "").includes("sina") ? "新浪备用行情" : "东方财富行情";
-  document.querySelector(".scan-data-note").textContent = `${sourceLabel} · 全市场 ${result.universeSize.toLocaleString("zh-CN")} 只 · ${formatDateTime(result.scannedAt)}`;
+  const strategyLabel = result.strategyVersion ? ` · 策略 ${result.strategyVersion}` : "";
+  document.querySelector(".scan-data-note").textContent = `${sourceLabel}${strategyLabel} · 全市场 ${result.universeSize.toLocaleString("zh-CN")} 只 · ${formatDateTime(result.scannedAt)}`;
   document.querySelector(".scan-top-picks").setAttribute("aria-busy", "false");
   $("retryMarketScan").hidden = true;
   window.clearTimeout(dailyRecommendationRetryTimer);

@@ -40,6 +40,38 @@ finsight:
     analysis-ttl: PT6H
   stock-universe:
     free-provider-enabled: true
+  recommendations:
+    result-limit: 24
+    strategy:
+      version: market-score-v1
+      eligibility:
+        minimum-price: 2
+        minimum-amount: 80000000
+        minimum-change-percent: -9.5
+      weights:
+        trend: 0.48
+        liquidity: 0.24
+        valuation: 0.28
+      trend:
+        base-score: 52
+        change-multiplier: 7
+        amplitude-threshold: 5
+        amplitude-penalty-multiplier: 2.2
+      valuation:
+        base-score: 68
+        preferred-pe-max: 45
+        acceptable-pe-max: 80
+        preferred-pe-bonus: 12
+        acceptable-pe-bonus: 3
+        pe-penalty: 12
+        preferred-pb-max: 8
+        preferred-pb-bonus: 8
+        pb-penalty: 10
+      risk:
+        amplitude-threshold: 7
+        amplitude-penalty-multiplier: 1.4
+        absolute-change-threshold: 7
+        change-penalty-multiplier: 2.2
   scheduler:
     enabled: false
     zone: Asia/Shanghai

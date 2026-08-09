@@ -72,7 +72,8 @@ public class StockMarketScheduler {
     public void refreshDailyRecommendations() {
         try {
             DailyRecommendationService.DailyRecommendations result = dailyRecommendationService.refresh();
-            log.info("Daily recommendations refreshed: date={}, universe={}, top={}", result.tradeDate(), result.universeSize(), result.items().get(0).symbol());
+            log.info("Daily recommendations refreshed: date={}, universe={}, strategy={}, top={}",
+                    result.tradeDate(), result.universeSize(), result.strategyVersion(), result.items().get(0).symbol());
         } catch (RuntimeException ex) {
             log.warn("Daily recommendation refresh failed", ex);
         }

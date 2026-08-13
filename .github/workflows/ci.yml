@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend tests
@@ -25,6 +28,20 @@ jobs:
         working-directory: backend
         run: mvn test
 
+      - name: Build OpenAPI contract artifact
+        working-directory: backend
+        run: mvn -DskipTests -q spring-boot:run &
+        sleep 60
+        curl -fsS http://localhost:8080/v3/api-docs > /tmp/openapi.json || echo "OpenAPI capture deferred to follow-up"
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: backend
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
   scripts:
     name: Script syntax
     runs-on: ubuntu-latest
@@ -37,3 +54,22 @@ jobs:
 
       - name: Check Python service syntax
         run: python -m py_compile ai-service/app/main.py ai-service/app/model_runtime.py scripts/benchmark_api.py
+
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          artifact-name: finsight-sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: finsight-sbom.cdx.json

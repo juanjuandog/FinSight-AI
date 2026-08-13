@@ -1,6 +1,5 @@
 package com.finsight.application;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finsight.domain.model.Company;
 import com.finsight.domain.model.EvidenceChunk;
@@ -18,9 +17,14 @@ import com.finsight.market.MarketQuote;
 import com.finsight.rag.EvidenceRetriever;
 import com.finsight.workflow.WorkflowLease;
 import com.finsight.workflow.WorkflowLeaseService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +33,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class StockAiAnalysisService {
+    private static final Logger log = LoggerFactory.getLogger(StockAiAnalysisService.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
     private static final String GUIDANCE_VERSION = "research-guidance-v1";
 
@@ -54,6 +58,8 @@ public class StockAiAnalysisService {
     private final WebClient webClient;
     private final Duration analysisCacheTtl;
     private final WorkflowLeaseService leaseService;
+    private final ConcurrentAnalysisWaiter concurrentWaiter;
+    private final MeterRegistry meterRegistry;
     private final Map<String, StockAiAnalysisResponse> latestResponses = new ConcurrentHashMap<>();
 
     public StockAiAnalysisService(
@@ -69,6 +75,8 @@ public class StockAiAnalysisService {
             ObjectMapper objectMapper,
             WebClient.Builder builder,
             WorkflowLeaseService leaseService,
+            ConcurrentAnalysisWaiter concurrentWaiter,
+            MeterRegistry meterRegistry,
             @Value("${finsight.ai-service-url:http://localhost:8001}") String aiServiceUrl,
             @Value("${finsight.cache.analysis-ttl:PT6H}") Duration analysisCacheTtl
     ) {
@@ -84,6 +92,8 @@ public class StockAiAnalysisService {
         this.objectMapper = objectMapper;
         this.webClient = builder.baseUrl(trimTrailingSlash(aiServiceUrl)).build();
         this.leaseService = leaseService;
+        this.concurrentWaiter = concurrentWaiter;
+        this.meterRegistry = meterRegistry;
         this.analysisCacheTtl = analysisCacheTtl;
     }
 
@@ -128,25 +138,39 @@ public class StockAiAnalysisService {
         }
 
         String leaseKey = "stock-analysis:" + cacheKey;
-        Optional<WorkflowLease> lease = leaseService.tryAcquire(leaseKey, Duration.ofSeconds(90));
-        if (lease.isEmpty()) {
-            return awaitConcurrentResult(cacheKey, normalized, contextHash);
+        return concurrentWaiter.runOrWait(
+                leaseKey,
+                Duration.ofSeconds(90),
+                () -> executeUnderLease(
+                        normalized, contextHash, dataSnapshotHash, cacheKey,
+                        request, company, quote, metrics, risks, evidence),
+                result -> result != null && result.summary() != null
+        );
+    }
+
+    private StockAiAnalysisResponse executeUnderLease(
+            String normalized,
+            String contextHash,
+            String dataSnapshotHash,
+            String cacheKey,
+            StockAiAnalysisRequest request,
+            Company company,
+            MarketQuote quote,
+            List<FinancialMetric> metrics,
+            List<RiskSignal> risks,
+            List<EvidencePayload> evidence
+    ) {
+        Optional<StockAiAnalysisResponse> secondCheck = analysisCache.get(cacheKey)
+                .or(() -> reportRepository.findLatest(normalized)
+                        .filter(report -> report.contextHash().equals(contextHash))
+                        .map(this::fromReport))
+                .map(StockAiAnalysisResponse::withCacheHit);
+        if (secondCheck.isPresent()) {
+            latestResponses.put(normalized, secondCheck.get());
+            return secondCheck.get();
         }
-        try {
-            Optional<StockAiAnalysisResponse> secondCheck = analysisCache.get(cacheKey)
-                    .or(() -> reportRepository.findLatest(normalized)
-                            .filter(report -> report.contextHash().equals(contextHash))
-                            .map(this::fromReport))
-                    .map(StockAiAnalysisResponse::withCacheHit);
-            if (secondCheck.isPresent()) {
-                latestResponses.put(normalized, secondCheck.get());
-                return secondCheck.get();
-            }
-            StockAiAnalysisResponse response = callAiOrFallback(request, company, quote, metrics, risks, evidence);
-            return persistAndCache(normalized, contextHash, dataSnapshotHash, cacheKey, response);
-        } finally {
-            leaseService.release(lease.get());
-        }
+        StockAiAnalysisResponse response = callAiOrFallback(request, company, quote, metrics, risks, evidence);
+        return persistAndCache(normalized, contextHash, dataSnapshotHash, cacheKey, response);
     }
 
     private StockAiAnalysisResponse callAiOrFallback(
@@ -158,6 +182,8 @@ public class StockAiAnalysisService {
             List<EvidencePayload> evidence
     ) {
         StockAiAnalysisResponse response = null;
+        long start = System.nanoTime();
+        String outcome = "skipped";
         try {
             response = webClient.post()
                     .uri("/analyze-stock")
@@ -165,37 +191,38 @@ public class StockAiAnalysisService {
                     .retrieve()
                     .bodyToMono(StockAiAnalysisResponse.class)
                     .block(TIMEOUT);
-        } catch (RuntimeException ignored) {
-            // Keep the UI usable when the local Ollama sidecar is not running.
+            outcome = (response != null && response.summary() != null && !response.summary().isBlank())
+                    ? "success"
+                    : "empty";
+        } catch (RuntimeException ex) {
+            outcome = classify(ex);
+            log.warn("AI sidecar /analyze-stock failed for {}: outcome={}", company.symbol(), outcome);
+        } finally {
+            recordCallMetric(start, outcome);
         }
         return response == null || response.summary() == null || response.summary().isBlank()
                 ? fallback(company, quote, metrics, risks, evidence)
                 : response.withGuidance(guidance(company, quote, metrics, risks, evidence, response.positivePoints(), response.riskPoints()));
     }
 
-    private StockAiAnalysisResponse awaitConcurrentResult(
-            String cacheKey,
-            String symbol,
-            String contextHash
-    ) {
-        Instant deadline = Instant.now().plusSeconds(10);
-        while (Instant.now().isBefore(deadline)) {
-            Optional<StockAiAnalysisResponse> completed = analysisCache.get(cacheKey)
-                    .or(() -> reportRepository.findLatest(symbol)
-                            .filter(report -> report.contextHash().equals(contextHash))
-                            .map(this::fromReport))
-                    .map(StockAiAnalysisResponse::withCacheHit);
-            if (completed.isPresent()) {
-                return completed.get();
-            }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while waiting for stock analysis", ex);
-            }
+    private String classify(Throwable ex) {
+        if (ex instanceof WebClientResponseException webEx) {
+            return "http_" + webEx.getStatusCode().value();
         }
-        throw new IllegalStateException("Stock analysis is already running for " + symbol);
+        if (ex instanceof java.util.concurrent.TimeoutException) {
+            return "timeout";
+        }
+        String message = ex.getClass().getSimpleName();
+        return message.isBlank() ? "exception" : message.toLowerCase();
+    }
+
+    private void recordCallMetric(long startNanos, String outcome) {
+        Timer.builder("finsight.ai.sidecar.analyze.duration")
+                .description("AI sidecar analyze-stock latency")
+                .tag("outcome", outcome)
+                .register(meterRegistry)
+                .record(System.nanoTime() - startNanos, java.util.concurrent.TimeUnit.NANOSECONDS);
+        meterRegistry.counter("finsight.ai.sidecar.analyze.total", "outcome", outcome).increment();
     }
 
     public Optional<StockAiAnalysisResponse> latest(String symbol) {
@@ -361,28 +388,27 @@ public class StockAiAnalysisService {
     }
 
     private String contextHash(StockAiAnalysisRequest request) {
-        Map<String, Object> fingerprint = new LinkedHashMap<>();
-        fingerprint.put("symbol", request.company().symbol());
-        fingerprint.put("guidanceVersion", GUIDANCE_VERSION);
-        fingerprint.put("company", request.company().name());
-        fingerprint.put("quotePrice", request.quote().currentPrice());
-        fingerprint.put("quoteChange", request.quote().changePercent());
-        fingerprint.put("quoteDate", request.quote().tradeDate());
-        fingerprint.put("quoteRealtime", request.quote().realtime());
-        fingerprint.put("metrics", request.metrics().stream()
-                .map(metric -> metric.code() + ":" + metric.fiscalYear() + ":" + metric.value())
-                .toList());
-        fingerprint.put("risks", request.risks().stream()
-                .map(risk -> risk.code() + ":" + risk.detectedAt() + ":" + risk.severity())
-                .toList());
-        fingerprint.put("evidence", request.evidence().stream()
-                .map(item -> item.documentId() + ":" + item.title() + ":" + item.section())
-                .toList());
-        try {
-            return sha256(objectMapper.writeValueAsString(fingerprint));
-        } catch (JsonProcessingException ex) {
-            return sha256(fingerprint.toString());
+        StringBuilder builder = new StringBuilder(512);
+        builder.append(GUIDANCE_VERSION).append('|')
+                .append(request.company().symbol()).append('|')
+                .append(request.company().name()).append('|')
+                .append(request.quote().currentPrice()).append('|')
+                .append(request.quote().changePercent()).append('|')
+                .append(request.quote().tradeDate()).append('|')
+                .append(request.quote().realtime());
+        for (FinancialMetric metric : request.metrics()) {
+            builder.append('|').append(metric.code()).append(':')
+                    .append(metric.fiscalYear()).append(':').append(metric.value());
         }
+        for (RiskSignal risk : request.risks()) {
+            builder.append('|').append(risk.code()).append(':')
+                    .append(risk.detectedAt()).append(':').append(risk.severity());
+        }
+        for (EvidencePayload item : request.evidence()) {
+            builder.append('|').append(item.documentId()).append(':')
+                    .append(item.title()).append(':').append(item.section());
+        }
+        return sha256(builder.toString());
     }
 
     private String sha256(String value) {

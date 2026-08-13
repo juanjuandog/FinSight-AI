@@ -1,0 +1,24 @@
+{
+  "name": "finsight-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FinSight-AI static frontend: typed TypeScript client + Vite build.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "api:generate": "openapi-typescript http://localhost:8080/v3/api-docs --output src/api/generated/schema.d.ts"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "openapi-typescript": "^7.4.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vitest": "^1.5.0"
+  }
+}

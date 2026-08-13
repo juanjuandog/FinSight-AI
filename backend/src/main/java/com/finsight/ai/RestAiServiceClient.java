@@ -24,28 +24,37 @@ public class RestAiServiceClient implements AiServiceClient {
 
     private final WebClient webClient;
     private final MeterRegistry meterRegistry;
+    private final AiSidecarCircuitBreaker circuitBreaker;
     private final FallbackAiServiceClient fallback = new FallbackAiServiceClient();
 
     public RestAiServiceClient(
             WebClient.Builder builder,
             @Value("${finsight.ai-service-url}") String aiServiceUrl,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            AiSidecarCircuitBreaker circuitBreaker
     ) {
         this.webClient = builder.baseUrl(aiServiceUrl).build();
         this.meterRegistry = meterRegistry;
+        this.circuitBreaker = circuitBreaker;
     }
 
     @Override
     public List<EvidenceChunk> rerank(String question, List<EvidenceChunk> candidates) {
+        if (!circuitBreaker.tryAcquire()) {
+            recordOutcome("rerank", "circuit_open", System.nanoTime(), candidates.size(), 0);
+            return fallback.rerank(question, candidates);
+        }
         long start = System.nanoTime();
         try {
             RerankResponse response = invoke("/rerank", new RerankRequest(question, candidates), RerankResponse.class);
             if (response != null && response.evidence() != null) {
+                circuitBreaker.recordSuccess();
                 recordOutcome("rerank", "success", start, candidates.size(), response.evidence().size());
                 return response.evidence();
             }
             recordOutcome("rerank", "empty", start, candidates.size(), 0);
         } catch (RuntimeException ex) {
+            circuitBreaker.recordFailure();
             recordOutcome("rerank", classify(ex), start, candidates.size(), 0);
         }
         return fallback.rerank(question, candidates);
@@ -53,6 +62,10 @@ public class RestAiServiceClient implements AiServiceClient {
 
     @Override
     public String generateAnswer(String question, Map<String, Object> structuredQuery, List<EvidenceChunk> evidence) {
+        if (!circuitBreaker.tryAcquire()) {
+            recordOutcome("generate-answer", "circuit_open", System.nanoTime(), evidence.size(), 0);
+            return fallback.generateAnswer(question, structuredQuery, evidence);
+        }
         long start = System.nanoTime();
         try {
             GenerateAnswerResponse response = invoke(
@@ -61,11 +74,13 @@ public class RestAiServiceClient implements AiServiceClient {
                     GenerateAnswerResponse.class
             );
             if (response != null && response.answer() != null && !response.answer().isBlank()) {
+                circuitBreaker.recordSuccess();
                 recordOutcome("generate-answer", "success", start, evidence.size(), 1);
                 return response.answer();
             }
             recordOutcome("generate-answer", "empty", start, evidence.size(), 0);
         } catch (RuntimeException ex) {
+            circuitBreaker.recordFailure();
             recordOutcome("generate-answer", classify(ex), start, evidence.size(), 0);
         }
         return fallback.generateAnswer(question, structuredQuery, evidence);

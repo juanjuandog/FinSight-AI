@@ -17,6 +17,7 @@ import com.finsight.market.MarketQuote;
 import com.finsight.rag.EvidenceRetriever;
 import com.finsight.workflow.WorkflowLease;
 import com.finsight.workflow.WorkflowLeaseService;
+import com.finsight.ai.AiSidecarCircuitBreaker;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -59,6 +60,7 @@ public class StockAiAnalysisService {
     private final Duration analysisCacheTtl;
     private final WorkflowLeaseService leaseService;
     private final ConcurrentAnalysisWaiter concurrentWaiter;
+    private final AiSidecarCircuitBreaker circuitBreaker;
     private final MeterRegistry meterRegistry;
     private final Map<String, StockAiAnalysisResponse> latestResponses = new ConcurrentHashMap<>();
 
@@ -76,6 +78,7 @@ public class StockAiAnalysisService {
             WebClient.Builder builder,
             WorkflowLeaseService leaseService,
             ConcurrentAnalysisWaiter concurrentWaiter,
+            AiSidecarCircuitBreaker circuitBreaker,
             MeterRegistry meterRegistry,
             @Value("${finsight.ai-service-url:http://localhost:8001}") String aiServiceUrl,
             @Value("${finsight.cache.analysis-ttl:PT6H}") Duration analysisCacheTtl
@@ -93,6 +96,7 @@ public class StockAiAnalysisService {
         this.webClient = builder.baseUrl(trimTrailingSlash(aiServiceUrl)).build();
         this.leaseService = leaseService;
         this.concurrentWaiter = concurrentWaiter;
+        this.circuitBreaker = circuitBreaker;
         this.meterRegistry = meterRegistry;
         this.analysisCacheTtl = analysisCacheTtl;
     }
@@ -184,6 +188,11 @@ public class StockAiAnalysisService {
         StockAiAnalysisResponse response = null;
         long start = System.nanoTime();
         String outcome = "skipped";
+        if (!circuitBreaker.tryAcquire()) {
+            outcome = "circuit_open";
+            recordCallMetric(start, outcome);
+            return fallback(company, quote, metrics, risks, evidence);
+        }
         try {
             response = webClient.post()
                     .uri("/analyze-stock")
@@ -191,10 +200,14 @@ public class StockAiAnalysisService {
                     .retrieve()
                     .bodyToMono(StockAiAnalysisResponse.class)
                     .block(TIMEOUT);
-            outcome = (response != null && response.summary() != null && !response.summary().isBlank())
-                    ? "success"
-                    : "empty";
+            if (response != null && response.summary() != null && !response.summary().isBlank()) {
+                circuitBreaker.recordSuccess();
+                outcome = "success";
+            } else {
+                outcome = "empty";
+            }
         } catch (RuntimeException ex) {
+            circuitBreaker.recordFailure();
             outcome = classify(ex);
             log.warn("AI sidecar /analyze-stock failed for {}: outcome={}", company.symbol(), outcome);
         } finally {

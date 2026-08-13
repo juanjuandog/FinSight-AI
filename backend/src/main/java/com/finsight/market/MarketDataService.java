@@ -17,21 +17,28 @@ public class MarketDataService {
     private final EastmoneyMarketHistoryClient marketHistoryClient;
     private final CompanyRepository companyRepository;
     private final ExchangeResolver exchangeResolver;
+    private final MarketDataCache cache;
 
     public MarketDataService(
             MarketDataClient marketDataClient,
             EastmoneyMarketHistoryClient marketHistoryClient,
             CompanyRepository companyRepository,
-            ExchangeResolver exchangeResolver
+            ExchangeResolver exchangeResolver,
+            MarketDataCache cache
     ) {
         this.marketDataClient = marketDataClient;
         this.marketHistoryClient = marketHistoryClient;
         this.companyRepository = companyRepository;
         this.exchangeResolver = exchangeResolver;
+        this.cache = cache;
     }
 
     public MarketQuote quote(String symbol) {
         String normalized = exchangeResolver.normalizeSymbol(symbol);
+        return cache.getQuote(normalized).orElseGet(() -> fetchQuote(normalized));
+    }
+
+    private MarketQuote fetchQuote(String normalized) {
         try {
             MarketQuote quote = marketDataClient.quote(normalized);
             companyRepository.save(new Company(
@@ -40,23 +47,34 @@ public class MarketDataService {
                     quote.exchange(),
                     companyRepository.findBySymbol(normalized).map(Company::industry).orElse("待分类")
             ));
+            cache.putQuote(normalized, quote);
             return quote;
         } catch (RuntimeException ex) {
-            return fallbackQuote(normalized, ex.getMessage());
+            MarketQuote fallback = fallbackQuote(normalized, ex.getMessage());
+            cache.putQuote(normalized, fallback);
+            return fallback;
         }
     }
 
     public List<MarketCandle> history(String symbol, int limit) {
         String normalized = exchangeResolver.normalizeSymbol(symbol);
+        int bounded = Math.min(Math.max(limit, 20), 260);
+        return cache.getHistory(normalized, bounded).orElseGet(() -> fetchHistory(normalized, bounded));
+    }
+
+    private List<MarketCandle> fetchHistory(String normalized, int bounded) {
         try {
-            List<MarketCandle> candles = marketHistoryClient.daily(normalized, limit);
+            List<MarketCandle> candles = marketHistoryClient.daily(normalized, bounded);
             if (!candles.isEmpty()) {
+                cache.putHistory(normalized, bounded, candles);
                 return candles;
             }
         } catch (RuntimeException ignored) {
             // Historical chart should remain usable in offline demos.
         }
-        return fallbackHistory(normalized, Math.min(Math.max(limit, 20), 260));
+        List<MarketCandle> candles = fallbackHistory(normalized, bounded);
+        cache.putHistory(normalized, bounded, candles);
+        return candles;
     }
 
     private MarketQuote fallbackQuote(String symbol, String reason) {

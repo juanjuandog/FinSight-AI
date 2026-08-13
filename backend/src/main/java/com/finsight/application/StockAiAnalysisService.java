@@ -61,6 +61,8 @@ public class StockAiAnalysisService {
     private final WorkflowLeaseService leaseService;
     private final ConcurrentAnalysisWaiter concurrentWaiter;
     private final AiSidecarCircuitBreaker circuitBreaker;
+    private final ReportPersistenceService reportPersistence;
+    private final GuidanceScorer guidanceScorer;
     private final MeterRegistry meterRegistry;
     private final Map<String, StockAiAnalysisResponse> latestResponses = new ConcurrentHashMap<>();
 
@@ -79,6 +81,8 @@ public class StockAiAnalysisService {
             WorkflowLeaseService leaseService,
             ConcurrentAnalysisWaiter concurrentWaiter,
             AiSidecarCircuitBreaker circuitBreaker,
+            ReportPersistenceService reportPersistence,
+            GuidanceScorer guidanceScorer,
             MeterRegistry meterRegistry,
             @Value("${finsight.ai-service-url:http://localhost:8001}") String aiServiceUrl,
             @Value("${finsight.cache.analysis-ttl:PT6H}") Duration analysisCacheTtl
@@ -97,6 +101,8 @@ public class StockAiAnalysisService {
         this.leaseService = leaseService;
         this.concurrentWaiter = concurrentWaiter;
         this.circuitBreaker = circuitBreaker;
+        this.reportPersistence = reportPersistence;
+        this.guidanceScorer = guidanceScorer;
         this.meterRegistry = meterRegistry;
         this.analysisCacheTtl = analysisCacheTtl;
     }
@@ -215,7 +221,7 @@ public class StockAiAnalysisService {
         }
         return response == null || response.summary() == null || response.summary().isBlank()
                 ? fallback(company, quote, metrics, risks, evidence)
-                : response.withGuidance(guidance(company, quote, metrics, risks, evidence, response.positivePoints(), response.riskPoints()));
+                : response.withGuidance(guidanceScorer.score(company, quote, metrics, risks, evidence, response.positivePoints(), response.riskPoints()));
     }
 
     private String classify(Throwable ex) {
@@ -309,34 +315,9 @@ public class StockAiAnalysisService {
             String cacheKey,
             StockAiAnalysisResponse response
     ) {
-        Instant generatedAt = Instant.now();
-        String reportId = UUID.randomUUID().toString();
-        int reportVersion = reportRepository.nextVersion(symbol);
-        StockAiAnalysisResponse enriched = response.withPersistence(
-                reportId,
-                generatedAt,
-                false,
-                dataSnapshotHash,
-                reportVersion
+        StockAiAnalysisResponse enriched = reportPersistence.persist(
+                symbol, contextHash, dataSnapshotHash, cacheKey, response
         );
-        reportRepository.save(new StockAnalysisReport(
-                reportId,
-                symbol,
-                safe(enriched.rating(), "中性"),
-                safe(enriched.summary(), "暂无分析摘要"),
-                safeList(enriched.positivePoints()),
-                safeList(enriched.riskPoints()),
-                enriched.confidence(),
-                safeList(enriched.citations()),
-                safe(enriched.model(), "unknown"),
-                safe(enriched.source(), "unknown"),
-                enriched.aiGenerated(),
-                contextHash,
-                dataSnapshotHash,
-                reportVersion,
-                generatedAt
-        ));
-        analysisCache.put(cacheKey, enriched, analysisCacheTtl);
         latestResponses.put(symbol, enriched);
         return enriched;
     }
@@ -377,7 +358,7 @@ public class StockAiAnalysisService {
                 .map(RiskSignal::title)
                 .limit(4)
                 .toList();
-        ResearchGuidance guidance = guidance(company, quote, metrics, risks, evidence, positives, riskPoints);
+        ResearchGuidance guidance = guidanceScorer.score(company, quote, metrics, risks, evidence, positives, riskPoints);
         int confidence = Math.max(55, Math.min(85,
                 64 + Math.min(12, evidence.size() * 2) + Math.min(8, metrics.size())
                         - Math.min(12, risks.size() * 3) + (quote.realtime() ? 4 : 0)));
@@ -437,77 +418,25 @@ public class StockAiAnalysisService {
         }
     }
 
-    private BigDecimal metric(List<FinancialMetric> metrics, String code) {
-        return metrics.stream()
-                .filter(metric -> code.equals(metric.code()))
-                .findFirst()
-                .map(FinancialMetric::value)
-                .orElse(null);
-    }
-
-    private ResearchGuidance guidance(
-            Company company,
-            MarketQuote quote,
-            List<FinancialMetric> metrics,
-            List<RiskSignal> risks,
-            List<EvidencePayload> evidence,
-            List<String> positivePoints,
-            List<String> riskPoints
-    ) {
-        int completeness = Math.min(100,
-                (quote.realtime() ? 25 : 12)
-                        + Math.min(30, metrics.size() * 4)
-                        + Math.min(25, evidence.size() * 4)
-                        + (risks.isEmpty() ? 8 : 15));
-        BigDecimal roe = metric(metrics, "ROE");
-        BigDecimal cashQuality = metric(metrics, "OCF_NET_PROFIT");
-        boolean materialRisk = risks.size() >= 3 || quote.changePercent().compareTo(BigDecimal.valueOf(-5)) <= 0;
-        boolean qualitySupported = roe != null && roe.compareTo(BigDecimal.valueOf(0.10)) >= 0
-                && cashQuality != null && cashQuality.compareTo(BigDecimal.valueOf(0.80)) >= 0;
-        String priority = completeness < 52 ? "等待确认"
-                : materialRisk ? "暂不进入候选"
-                : qualitySupported && quote.changePercent().compareTo(BigDecimal.ZERO) >= 0 ? "优先研究"
-                : "等待确认";
-
-        List<String> supporting = positivePoints == null || positivePoints.isEmpty()
-                ? List.of("当前已有行情快照；财务和公告证据仍需补齐后再判断研究优先级")
-                : positivePoints.stream().limit(3).toList();
-        List<String> confirmations = new java.util.ArrayList<>();
-        if (metrics.isEmpty()) confirmations.add("补齐最新财务指标后，确认盈利质量、现金流与负债变化。");
-        if (evidence.size() < 3) confirmations.add("补充最近公告、财报或行业资料，避免只依据行情作判断。");
-        if (!quote.realtime()) confirmations.add("等待下一次实时行情快照，确认价格和流动性没有反向变化。");
-        if (confirmations.isEmpty()) confirmations.add("跟踪后续公告与经营数据，验证当前支撑因素是否持续。");
-
-        List<String> invalidations = riskPoints == null || riskPoints.isEmpty()
-                ? List.of("若后续披露出现高严重度风险信号，或价格与流动性同步转弱，应从候选池移除。")
-                : riskPoints.stream().limit(3).toList();
-        List<String> actions = List.of(
-                "在“证据来源”中检索最新财报或公告，核验支持因素。",
-                "在“近期事件”中检查是否存在新增经营、监管或行业风险。",
-                "将关键确认条件加入关注列表，等待下一次数据更新。"
-        );
-        String summary = switch (priority) {
-            case "优先研究" -> "数据与基础条件已形成初步支撑，建议优先核验其持续性与估值安全边际。";
-            case "暂不进入候选" -> "当前风险或价格波动尚未满足研究进入条件，先记录失效原因并等待变化。";
-            default -> "已有部分信号，但关键财务或公开证据尚不完整；先完成待确认项再决定是否深入研究。";
-        };
-        return new ResearchGuidance(priority, completeness, summary, supporting, confirmations, invalidations, actions);
-    }
-
     private ResearchGuidance restoredGuidance(StockAnalysisReport report) {
-        String priority = switch (report.rating()) {
-            case "积极", "优先研究" -> "优先研究";
-            case "谨慎", "暂不进入候选" -> "暂不进入候选";
-            default -> "等待确认";
-        };
-        return new ResearchGuidance(
-                priority,
-                0,
-                "这是一份旧版报告；请重新生成分析以获得数据完整度、确认条件与失效信号。",
-                safeList(report.positivePoints()),
-                List.of("重新生成分析以核验最新行情、财务和证据。"),
-                safeList(report.riskPoints()),
-                List.of("查看证据来源并重新生成分析。")
+        return guidanceScorer.restoredFromLegacy(
+                new StockAiAnalysisResponse(
+                        report.rating(),
+                        report.summary(),
+                        report.positivePoints(),
+                        report.riskPoints(),
+                        report.confidence(),
+                        report.citations(),
+                        report.model(),
+                        report.source(),
+                        report.aiGenerated(),
+                        report.id(),
+                        report.generatedAt(),
+                        false,
+                        report.dataSnapshotHash(),
+                        report.reportVersion(),
+                        null
+                )
         );
     }
 

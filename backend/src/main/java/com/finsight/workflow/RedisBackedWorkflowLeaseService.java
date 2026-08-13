@@ -17,6 +17,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class RedisBackedWorkflowLeaseService implements WorkflowLeaseService {
+    public static final String WORKFLOW_KEY_PREFIX = "finsight:workflow:lease:";
+    public static final String WORKFLOW_FENCE_PREFIX = "finsight:workflow:fence:";
+    public static final String ANALYSIS_KEY_PREFIX = "finsight:analysis:lease:";
+    public static final String ANALYSIS_FENCE_PREFIX = "finsight:analysis:fence:";
     private static final String ACQUIRE_LUA = """
             local leaseKey = KEYS[1]
             local fenceKey = KEYS[2]
@@ -52,6 +56,7 @@ public class RedisBackedWorkflowLeaseService implements WorkflowLeaseService {
     private final String ownerPrefix;
     private final boolean allowLocalFallback;
     private final ConcurrentHashMap<String, WorkflowLease> localLeases = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, WorkflowLease> localAnalysisLeases = new ConcurrentHashMap<>();
     private final AtomicLong localFence = new AtomicLong();
 
     public RedisBackedWorkflowLeaseService(
@@ -148,10 +153,61 @@ public class RedisBackedWorkflowLeaseService implements WorkflowLeaseService {
     }
 
     private String redisKey(String key) {
-        return "finsight:workflow:lease:" + key;
+        return WORKFLOW_KEY_PREFIX + key;
     }
 
     private String redisFenceKey(String key) {
-        return "finsight:workflow:fence:" + key;
+        return WORKFLOW_FENCE_PREFIX + key;
+    }
+
+    public Optional<WorkflowLease> tryAcquireAnalysis(String key, Duration ttl) {
+        // Re-uses the same Lua scripts but with a separate namespace so workflow
+        // leases and analysis leases do not collide.
+        String owner = ownerPrefix + ":analysis:" + UUID.randomUUID();
+        Instant expiresAt = Instant.now().plus(ttl);
+        if (redisTemplate != null) {
+            try {
+                Long token = redisTemplate.execute(
+                        new DefaultRedisScript<>(ACQUIRE_LUA, Long.class),
+                        List.of(ANALYSIS_KEY_PREFIX + key, ANALYSIS_FENCE_PREFIX + key),
+                        owner,
+                        String.valueOf(ttl.toMillis())
+                );
+                return token == null ? Optional.empty() : Optional.of(new WorkflowLease(key, owner, token, expiresAt));
+            } catch (RuntimeException ex) {
+                if (!allowLocalFallback) {
+                    throw new IllegalStateException("Redis analysis lease acquisition failed and local fallback is disabled", ex);
+                }
+            }
+        }
+        if (!allowLocalFallback) {
+            throw new IllegalStateException("Redis lease service is unavailable and local fallback is disabled");
+        }
+        WorkflowLease lease = new WorkflowLease(key, owner, localFence.incrementAndGet(), expiresAt);
+        WorkflowLease existing = localAnalysisLeases.compute(key, (ignored, current) -> {
+            if (current == null || current.expiresAt().isBefore(Instant.now())) {
+                return lease;
+            }
+            return current;
+        });
+        return lease.equals(existing) ? Optional.of(lease) : Optional.empty();
+    }
+
+    public void releaseAnalysis(WorkflowLease lease) {
+        if (redisTemplate != null) {
+            try {
+                redisTemplate.execute(
+                        new DefaultRedisScript<>(RELEASE_LUA, Long.class),
+                        List.of(ANALYSIS_KEY_PREFIX + lease.key()),
+                        lease.owner() + ":" + lease.fencingToken()
+                );
+                return;
+            } catch (RuntimeException ex) {
+                if (!allowLocalFallback) {
+                    throw new IllegalStateException("Redis analysis lease release failed and local fallback is disabled", ex);
+                }
+            }
+        }
+        localAnalysisLeases.remove(lease.key(), lease);
     }
 }

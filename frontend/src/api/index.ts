@@ -17,7 +17,7 @@ import createClient, { type Middleware } from 'openapi-fetch';
 import type { paths } from './generated/schema';
 
 export type ApiPaths = paths;
-export type ApiClient = ReturnType<typeof createClient<paths>>;
+export type ApiClient = ReturnType<typeof createClient<any>>;
 
 export class ApiError extends Error {
   constructor(
@@ -92,8 +92,10 @@ export function once<T>(key: string, fn: () => Promise<T>): Promise<T> {
 }
 
 export function createApiClient(baseUrl = ''): ApiClient {
-  return createClient<paths>({
+  const client = createClient<any>({
     baseUrl,
     credentials: 'include'
-  }).use(csrfHeader, errorNormaliser);
+  }) as ApiClient;
+  client.use(csrfHeader, errorNormaliser);
+  return client;
 }

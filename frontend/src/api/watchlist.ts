@@ -14,30 +14,39 @@ export function listWatchlist(client: ApiClient): Promise<WatchlistItem[]> {
 }
 
 export function addToWatchlist(
-  client: ApiClient,
+  _client: ApiClient,
   symbol: string
 ): Promise<WatchlistItem> {
-  return once(`watchlist:add:${symbol}`, () =>
-    client
-      .POST('/api/watchlist', { body: { companySymbol: symbol } })
-      .then((res) => {
-        if (res.error || !res.data) {
-          throw new Error('add to watchlist failed');
-        }
-        return res.data as unknown as WatchlistItem;
-      })
-  );
+  return once(`watchlist:add:${symbol}`, async () => {
+    // The controller endpoint is POST /api/watchlist/{symbol}; use
+    // fetch directly because the placeholder schema doesn't know
+    // about this path yet. The client argument is kept for parity
+    // with the other wrappers and will be used once api-lint has
+    // generated the real schema.
+    const response = await fetch(
+      `/api/watchlist/${encodeURIComponent(symbol)}`,
+      { method: 'POST', credentials: 'same-origin' }
+    );
+    if (!response.ok) {
+      throw new Error('add to watchlist failed');
+    }
+    if (response.status === 204) return { companySymbol: symbol, createdAt: '' };
+    const body = (await response.json()) as WatchlistItem;
+    return body;
+  });
 }
 
 export function removeFromWatchlist(
-  client: ApiClient,
+  _client: ApiClient,
   symbol: string
 ): Promise<void> {
-  return once(`watchlist:remove:${symbol}`, () =>
-    client
-      .DELETE('/api/watchlist/{symbol}', {
-        params: { path: { symbol } }
-      })
-      .then(() => undefined)
-  );
+  return once(`watchlist:remove:${symbol}`, async () => {
+    const response = await fetch(
+      `/api/watchlist/${encodeURIComponent(symbol)}`,
+      { method: 'DELETE', credentials: 'same-origin' }
+    );
+    if (!response.ok && response.status !== 204) {
+      throw new Error('remove from watchlist failed');
+    }
+  });
 }

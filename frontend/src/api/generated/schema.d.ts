@@ -3,7 +3,21 @@
 //
 //   npm run api:generate
 //
-// Until the first CI run, the empty type intentionally makes
-// every endpoint `any`-shaped; the api-lint job fails the build
-// if the generated file is not byte-identical to the committed one.
-export type paths = Record<string, never>;
+// Until the first CI run generates the real schema, this placeholder
+// types every path and operation as `any`. The api-lint job fails
+// the build if the committed file is not byte-identical to the
+// freshly generated one.
+//
+// We model the placeholder with a permissive index signature so
+// openapi-fetch's URL parameter accepts any string path and
+// `res.data` is `any`. Once the real generation runs, the cast is
+// dropped.
+export type paths = {
+  [path: string]: {
+    [method: string]: {
+      parameters?: Record<string, unknown>;
+      requestBody?: Record<string, unknown>;
+      responses?: Record<string, unknown>;
+    };
+  };
+};

@@ -5,6 +5,7 @@ public enum DocumentType {
     QUARTERLY_REPORT,
     ANNOUNCEMENT,
     NEWS,
-    RESEARCH_REPORT
+    RESEARCH_REPORT,
+    FINANCIAL_REPORT,
+    RISK_REPORT
 }
-

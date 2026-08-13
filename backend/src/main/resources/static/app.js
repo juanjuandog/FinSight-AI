@@ -997,15 +997,27 @@ async function submitAuth(event) {
   button.textContent = register ? "创建中…" : "登录中…";
   setAuthFeedback("");
   try {
-    const user = await request(`/api/auth/${register ? "register" : "login"}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        verificationCode: register ? $("authVerificationCode").value.trim() : undefined
-      })
-    });
+    const bridge = (typeof window !== 'undefined' && window.finsight && window.finsight.bridge) || null;
+    const authBody = {
+      email,
+      password,
+      verificationCode: register ? $("authVerificationCode").value.trim() : undefined
+    };
+    const user = register
+      ? await (bridge
+        ? bridge.register(authBody)
+        : request('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(authBody)
+          }))
+      : await (bridge
+        ? bridge.login(authBody)
+        : request('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(authBody)
+          }));
     authUser = user;
     renderAccountState();
     setAuthGateRequired(false);
@@ -1034,11 +1046,13 @@ async function requestEmailVerificationCode() {
   button.disabled = true;
   setAuthFeedback("");
   try {
-    const result = await request("/api/auth/verification-code", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
-    });
+    const result = await (bridge
+      ? bridge.issueVerificationCode(email)
+      : request("/api/auth/verification-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        }));
     $("authVerificationHint").textContent = result.message || "验证码已发送。";
     let remaining = 60;
     button.textContent = `${remaining}s 后重发`;
@@ -1065,11 +1079,14 @@ async function requestPasswordReset(event) {
   button.disabled = true;
   setAuthFeedback("");
   try {
-    const result = await request("/api/auth/password-reset/request", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: $("resetEmail").value.trim() })
-    });
+    const email = $("resetEmail").value.trim();
+    const result = await (bridge
+      ? bridge.requestPasswordReset(email)
+      : request("/api/auth/password-reset/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        }));
     setAuthFeedback(result.message);
   } catch (error) {
     setAuthFeedback(error.message);
@@ -1088,11 +1105,13 @@ async function confirmPasswordReset(event) {
   const button = $("resetConfirmForm").querySelector(".primary-action");
   button.disabled = true;
   try {
-    const result = await request("/api/auth/password-reset/confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: resetToken, password })
-    });
+    const result = await (bridge
+      ? bridge.confirmPasswordReset(resetToken, password)
+      : request("/api/auth/password-reset/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: resetToken, password })
+        }));
     setAuthFeedback(result.message);
     window.setTimeout(() => openAuthDialog("login"), 700);
   } catch (error) {
@@ -1106,7 +1125,7 @@ async function logout() {
   const button = $("logoutButton");
   button.disabled = true;
   try {
-    await request("/api/auth/logout", { method: "POST" });
+    await (bridge ? bridge.logout() : request("/api/auth/logout", { method: "POST" }));
   } catch (error) {
     if (error.status !== 401) {
       $("watchlistActionStatus").textContent = `退出失败：${error.message}`;
@@ -1176,7 +1195,9 @@ function delay(milliseconds) {
 async function suggestStocks(query) {
   const normalized = String(query || "").trim();
   const suggestions = normalized
-    ? await request(`/api/companies/search?q=${encodeURIComponent(normalized)}&limit=12`).catch(() => [])
+    ? await (bridge
+      ? bridge.searchCompanies(normalized, 12)
+      : request(`/api/companies/search?q=${encodeURIComponent(normalized)}&limit=12`)).catch(() => [])
     : companies.slice(0, 12);
   $("stockSuggestions").innerHTML = suggestions.map(company =>
     `<option value="${escapeHtml(company.symbol)}">${escapeHtml(company.name)}，${escapeHtml(company.exchange)}，${escapeHtml(company.industry)}</option>`
@@ -1202,7 +1223,9 @@ async function search() {
     const endpoint = evidenceScope === "global"
       ? `/api/document-index/search?q=${query}&limit=6`
       : `/api/document-index/${symbol}/search?q=${query}&limit=6`;
-    const results = await request(endpoint);
+    const results = bridge
+      ? await bridge.searchDocumentIndex(question, evidenceScope === "global" ? null : symbol, 6)
+      : await request(endpoint);
     const visible = results.slice(0, 6);
     $("questionStatus").textContent = visible.length
       ? `已找到 ${visible.length} 条${evidenceScope === "global" ? "全市场" : "当前公司"}来源`
@@ -1326,7 +1349,9 @@ function renderDailyRecommendations(result) {
 }
 
 async function loadDailyRecommendations() {
-  const result = await request("/api/market/recommendations");
+  const result = await (bridge
+    ? bridge.dailyRecommendations()
+    : request("/api/market/recommendations"));
   return renderDailyRecommendations(result);
 }
 
@@ -1558,7 +1583,9 @@ async function refreshChart() {
   const requestedLimit = chartLimit;
   const requestGeneration = ++chartGeneration;
   try {
-    const candles = await request(`/api/market/history/${requestedSymbol}?limit=${requestedLimit}`);
+    const candles = await (bridge
+      ? bridge.history(requestedSymbol, requestedLimit)
+      : request(`/api/market/history/${requestedSymbol}?limit=${requestedLimit}`));
     if (
       requestGeneration !== chartGeneration
       || requestedSymbol !== symbol

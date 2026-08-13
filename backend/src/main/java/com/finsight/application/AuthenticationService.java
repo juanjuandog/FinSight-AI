@@ -33,13 +33,16 @@ public class AuthenticationService {
     private final UserAuthRepository repository;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder(12);
     private final PasswordResetMailer passwordResetMailer;
+    private final AuditEventService auditEventService;
     @Value("${finsight.auth.email-enabled:false}")
     private boolean emailEnabled;
     private final Map<String, Instant> verificationIssuedAt = new ConcurrentHashMap<>();
 
-    public AuthenticationService(UserAuthRepository repository, PasswordResetMailer passwordResetMailer) {
+    public AuthenticationService(UserAuthRepository repository, PasswordResetMailer passwordResetMailer,
+                                  AuditEventService auditEventService) {
         this.repository = repository;
         this.passwordResetMailer = passwordResetMailer;
+        this.auditEventService = auditEventService;
     }
 
     /**
@@ -49,7 +52,9 @@ public class AuthenticationService {
     public AuthSession register(String email, String password) {
         String normalizedEmail = normalizeEmail(email);
         validatePassword(password);
-        return createUser(normalizedEmail, password);
+        AuthSession session = createUser(normalizedEmail, password);
+        auditEventService.recordSuccess("auth.register", session.user().id(), normalizedEmail, "user", "registered");
+        return session;
     }
 
     public VerificationCodeIssue issueVerificationCode(String email) {
@@ -67,6 +72,7 @@ public class AuthenticationService {
         verificationIssuedAt.put(normalizedEmail, now);
         repository.saveEmailVerificationCode(normalizedEmail, hash(code), now.plus(VERIFICATION_TTL));
         passwordResetMailer.sendVerificationCode(normalizedEmail, code);
+        auditEventService.recordSuccess("auth.verification.issue", null, normalizedEmail, "email", "verification code issued");
         return new VerificationCodeIssue(authEmailEnabled() ? null : code, VERIFICATION_TTL.toSeconds());
     }
 
@@ -77,9 +83,12 @@ public class AuthenticationService {
             throw new AuthenticationConflictException("该邮箱已注册，请直接登录。");
         }
         if (!repository.consumeEmailVerificationCode(normalizedEmail, hash(verificationCode == null ? "" : verificationCode.trim()))) {
+            auditEventService.recordFailure("auth.register", null, normalizedEmail, "user", "invalid verification code");
             throw new AuthenticationFailedException("邮箱验证码无效或已过期，请重新获取。");
         }
-        return createUser(normalizedEmail, password);
+        AuthSession session = createUser(normalizedEmail, password);
+        auditEventService.recordSuccess("auth.register", session.user().id(), normalizedEmail, "user", "registered");
+        return session;
     }
 
     private AuthSession createUser(String normalizedEmail, String password) {
@@ -110,15 +119,20 @@ public class AuthenticationService {
         String normalizedEmail = normalizeEmail(email);
         UserAccount user = repository.findByEmail(normalizedEmail).orElse(null);
         if (user == null) {
+            auditEventService.recordFailure("auth.login", null, normalizedEmail, "user", "unknown account");
             throw new AuthenticationNotFoundException("该邮箱尚未注册，请先注册。");
         }
         if (!user.active()) {
+            auditEventService.recordFailure("auth.login", user.id(), normalizedEmail, "user", "inactive account");
             throw new AuthenticationFailedException("该账号暂时不可用，请联系管理员。");
         }
         if (!passwordEncoder.matches(password == null ? "" : password, user.passwordHash())) {
+            auditEventService.recordFailure("auth.login", user.id(), normalizedEmail, "user", "wrong password");
             throw new AuthenticationFailedException("密码不正确，请重试。");
         }
-        return createSession(user);
+        AuthSession session = createSession(user);
+        auditEventService.recordSuccess("auth.login", user.id(), normalizedEmail, "user", "session issued");
+        return session;
     }
 
     public Optional<UserAccount> currentUser(String rawToken) {
@@ -135,6 +149,7 @@ public class AuthenticationService {
     public void logout(String rawToken) {
         if (rawToken != null && !rawToken.isBlank()) {
             repository.revokeSession(hash(rawToken));
+            auditEventService.recordSuccess("auth.logout", null, null, "session", "session revoked");
         }
     }
 
@@ -144,14 +159,19 @@ public class AuthenticationService {
             String rawToken = randomToken();
             repository.savePasswordResetToken(user.id(), hash(rawToken), Instant.now().plus(RESET_TTL));
             passwordResetMailer.send(user.email(), rawToken);
+            auditEventService.recordSuccess("auth.reset.request", user.id(), normalizedEmail, "user", "reset link issued");
         });
     }
 
     public void resetPassword(String rawToken, String newPassword) {
         validatePassword(newPassword);
         PasswordResetToken token = repository.consumePasswordResetToken(hash(rawToken == null ? "" : rawToken))
-                .orElseThrow(() -> new AuthenticationFailedException("重置链接无效或已过期，请重新申请。"));
+                .orElseThrow(() -> {
+                    auditEventService.recordFailure("auth.reset.consume", null, null, "user", "invalid reset token");
+                    return new AuthenticationFailedException("重置链接无效或已过期，请重新申请。");
+                });
         repository.updatePassword(token.userId(), passwordEncoder.encode(newPassword));
+        auditEventService.recordSuccess("auth.reset.consume", token.userId(), null, "user", "password updated");
     }
 
     private AuthSession createSession(UserAccount user) {

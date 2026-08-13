@@ -77,6 +77,10 @@ class AuthenticationServiceTest {
     }
 
     private AuthenticationService service(PasswordResetMailer mailer) {
-        return new AuthenticationService(new InMemoryUserAuthRepository(), mailer);
+        return new AuthenticationService(
+                new InMemoryUserAuthRepository(),
+                mailer,
+                new AuditEventService(new com.finsight.infrastructure.InMemoryAuditLogRepository())
+        );
     }
 }

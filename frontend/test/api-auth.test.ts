@@ -37,11 +37,15 @@ describe('auth wrapper', () => {
     const session = await login(client, { email: 'u@x.com', password: 'secret' });
     expect(session.token).toBe('tok');
     expect(session.user.email).toBe('u@x.com');
-    const [url, init] = mockFetch.mock.calls[0];
+    const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+    const [req, init] = lastCall;
+    const url = req instanceof Request ? req.url : String(req);
     expect(url).toContain('/api/auth/login');
-    expect(init.method).toBe('POST');
-    const headers = init.headers as Record<string, string>;
-    expect(headers['X-CSRF-Token']).toBe('test-csrf');
+    const method = req instanceof Request ? req.method : (init?.method as string);
+    expect(method).toBe('POST');
+    const headers = req instanceof Request ? req.headers : (init?.headers ?? {});
+    const csrf = headers.get ? headers.get('X-CSRF-Token') : (headers as Record<string, string>)['X-CSRF-Token'];
+    expect(csrf).toBe('test-csrf');
   });
 
   it('register sends the verification code in the body', async () => {
@@ -54,8 +58,10 @@ describe('auth wrapper', () => {
     );
     const client = createApiClient('http://api.test');
     await register(client, { email: 'v@x.com', password: 'longenough12', verificationCode: '123456' });
-    const [, init] = mockFetch.mock.calls[0];
-    const body = JSON.parse(init.body as string);
+    const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+    const [req, init] = lastCall;
+    const bodyText = req instanceof Request ? await req.text() : (init.body as string);
+    const body = JSON.parse(bodyText);
     expect(body.email).toBe('v@x.com');
     expect(body.verificationCode).toBe('123456');
   });

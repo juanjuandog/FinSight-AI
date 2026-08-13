@@ -3,7 +3,10 @@
 //
 //   npm run api:generate
 //
-// Until the first CI run, the empty type intentionally makes
-// every endpoint `any`-shaped; the api-lint job fails the build
-// if the generated file is not byte-identical to the committed one.
-export type paths = Record<string, never>;
+// Until the first CI run generates the real schema, this placeholder
+// types `paths` as `never` to force every wrapper to `as any`-cast
+// its responses. Once the real codegen runs, the typed schema takes
+// over and the casts become unnecessary. The api-lint job fails
+// the build if this file is not byte-identical to the freshly
+// generated one.
+export type paths = Record<never, never>;

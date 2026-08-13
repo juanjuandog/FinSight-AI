@@ -42,6 +42,28 @@ class RedisBackedWorkflowLeaseServiceTest {
         assertThat(service.tryAcquire("report:600519", Duration.ofSeconds(30))).isPresent();
     }
 
+    @Test
+    void analysisLeaseUsesSeparateNamespace() {
+        ObjectProvider<StringRedisTemplate> provider = unavailableRedisProvider();
+        RedisBackedWorkflowLeaseService service =
+                new RedisBackedWorkflowLeaseService(provider, "test-worker", true);
+
+        WorkflowLease workflow = service.tryAcquire("report:600519", Duration.ofSeconds(30)).orElseThrow();
+        WorkflowLease analysis = service.tryAcquireAnalysis("report:600519", Duration.ofSeconds(30)).orElseThrow();
+
+        assertThat(workflow.key()).isEqualTo(analysis.key());
+        assertThat(workflow.fencingToken()).isNotEqualTo(analysis.fencingToken());
+        // Workflow and analysis slots are tracked independently under local fallback.
+        assertThat(service.tryAcquire("report:600519", Duration.ofSeconds(30))).isEmpty();
+        assertThat(service.tryAcquireAnalysis("report:600519", Duration.ofSeconds(30))).isEmpty();
+
+        service.releaseAnalysis(analysis);
+        assertThat(service.tryAcquireAnalysis("report:600519", Duration.ofSeconds(30))).isPresent();
+        // The workflow lease remains held.
+        assertThat(service.tryAcquire("report:600519", Duration.ofSeconds(30))).isEmpty();
+        service.release(workflow);
+    }
+
     private ObjectProvider<StringRedisTemplate> unavailableRedisProvider() {
         return new ObjectProvider<>() {
             @Override

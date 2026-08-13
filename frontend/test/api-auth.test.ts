@@ -44,9 +44,7 @@ describe('auth wrapper', () => {
     const method = req instanceof Request ? req.method : (init?.method as string);
     expect(method).toBe('POST');
     const headers = req instanceof Request ? req.headers : (init?.headers ?? {});
-    const csrf = headers.get
-      ? headers.get('X-CSRF-Token')
-      : (headers as Record<string, string>)['X-CSRF-Token'];
+    const csrf = headers.get ? headers.get('X-CSRF-Token') : (headers as Record<string, string>)['X-CSRF-Token'];
     expect(csrf).toBe('test-csrf');
   });
 
@@ -62,8 +60,8 @@ describe('auth wrapper', () => {
     await register(client, { email: 'v@x.com', password: 'longenough12', verificationCode: '123456' });
     const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
     const [req, init] = lastCall;
-    const bodyText = req instanceof Request ? await req.text() : (init?.body as string);
-    const body = JSON.parse(bodyText || '{}');
+    const bodyText = req instanceof Request ? await req.text() : (init.body as string);
+    const body = JSON.parse(bodyText);
     expect(body.email).toBe('v@x.com');
     expect(body.verificationCode).toBe('123456');
   });

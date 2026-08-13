@@ -17,6 +17,12 @@ import createClient, { type Middleware } from 'openapi-fetch';
 import type { paths } from './generated/schema';
 
 export type ApiPaths = paths;
+/**
+ * The typed-client type is loosened to `any` until `npm run api:generate`
+ * has produced the real schema. The api-lint CI job ensures the
+ * generated schema replaces this placeholder before merge, at which
+ * point we drop the `as any` cast and the response types light up.
+ */
 export type ApiClient = ReturnType<typeof createClient<any>>;
 
 export class ApiError extends Error {
@@ -99,3 +105,15 @@ export function createApiClient(baseUrl = ''): ApiClient {
   client.use(csrfHeader, errorNormaliser);
   return client;
 }
+
+// Re-export each module as a namespace so callers can do
+// `import { auth, research } from '../api'` and use
+// `auth.login(client, ...)`. Mirrors the structure exposed on
+// `window.finsight.api` in `main.ts`.
+export * as auth from './auth';
+export * as research from './research';
+export * as watchlist from './watchlist';
+export * as market from './market';
+export * as intelligence from './intelligence';
+export * as companies from './companies';
+export * as workflow from './workflow';

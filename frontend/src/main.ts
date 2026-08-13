@@ -5,22 +5,41 @@
 // typed calls one workspace at a time. The full migration to
 // `main.ts` as the primary entry point is the work of RFC 005.
 
-import { createApiClient } from './api';
-import { analyzeStock, latestAnalysis, quote } from './api/research';
 import {
-  addToWatchlist,
-  listWatchlist,
-  removeFromWatchlist
-} from './api/watchlist';
-import {
-  currentSession,
-  issueVerificationCode,
-  login,
-  logout,
-  register
-} from './api/auth';
+  ApiError,
+  auth as authApi,
+  companies as companiesApi,
+  createApiClient,
+  intelligence as intelligenceApi,
+  market as marketApi,
+  once,
+  research as researchApi,
+  watchlist as watchlistApi,
+  workflow as workflowApi
+} from './api';
 
-const api = createApiClient();
+const client = createApiClient();
+
+const api = {
+  client,
+  once,
+  ApiError,
+  auth: authApi,
+  companies: companiesApi,
+  intelligence: intelligenceApi,
+  market: marketApi,
+  research: researchApi,
+  watchlist: watchlistApi,
+  workflow: workflowApi
+};
+
+declare global {
+  interface Window {
+    finsight: {
+      api?: typeof api;
+    };
+  }
+}
 
 window.finsight = {
   ...(window.finsight ?? {}),
@@ -29,15 +48,14 @@ window.finsight = {
 
 export {
   api,
-  analyzeStock,
-  latestAnalysis,
-  quote,
-  addToWatchlist,
-  listWatchlist,
-  removeFromWatchlist,
-  currentSession,
-  issueVerificationCode,
-  login,
-  logout,
-  register
+  ApiError,
+  authApi,
+  client,
+  companiesApi,
+  intelligenceApi,
+  marketApi,
+  once,
+  researchApi,
+  watchlistApi,
+  workflowApi
 };

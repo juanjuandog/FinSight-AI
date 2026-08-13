@@ -12,7 +12,7 @@ export default defineConfig({
       entry: resolve(__dirname, 'src/main.ts'),
       formats: ['iife'],
       name: 'finsight',
-      fileName: 'app.bundle'
+      fileName: () => 'app.bundle.js'
     },
     rollupOptions: {
       output: { extend: true }
@@ -28,7 +28,12 @@ export default defineConfig({
     }
   },
   test: {
-    environment: 'jsdom',
+    // The static `app.js` IIFE still owns the DOM; our typed-client
+    // bundle is a thin wrapper around `fetch`. Default to the node
+    // environment so `fetch` is the real undici implementation; the
+    // tests stub it explicitly. Per-file overrides go to the top of
+    // the test file (`// @vitest-environment jsdom`).
+    environment: 'node',
     include: ['test/**/*.test.ts']
   }
 });

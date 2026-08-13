@@ -200,7 +200,8 @@ async function refresh() {
     renderChartStats([], null);
   }
 
-  const companiesRequest = request("/api/companies?limit=200")
+  const bridge = (typeof window !== 'undefined' && window.finsight && window.finsight.bridge) || null;
+  const companiesRequest = (bridge ? bridge.listCompanies(200) : request("/api/companies?limit=200"))
     .catch(() => companies)
     .then(nextCompanies => {
       if (!isCurrent()) return;
@@ -208,7 +209,8 @@ async function refresh() {
       updateCompanyCard(latestQuote);
     });
 
-  request(`/api/market/quotes/${requestedSymbol}`).catch(error => ({
+  (bridge ? bridge.quote(requestedSymbol) : request(`/api/market/quotes/${requestedSymbol}`))
+    .catch(error => ({
       symbol: requestedSymbol,
       name: `股票 ${requestedSymbol}`,
       exchange: "CN",
@@ -224,7 +226,7 @@ async function refresh() {
       renderChartStats(latestCandles, quote);
     });
 
-  request(`/api/companies/${requestedSymbol}/ai-analysis/latest`)
+  (bridge ? bridge.latestAnalysis(requestedSymbol) : request(`/api/companies/${requestedSymbol}/ai-analysis/latest`))
     .catch(() => null)
     .then(aiAnalysis => {
       if (!isCurrent()) return;
@@ -233,7 +235,7 @@ async function refresh() {
       renderUniverseStatus();
     });
 
-  request(`/api/market/history/${requestedSymbol}?limit=${chartLimit}`)
+  (bridge ? bridge.history(requestedSymbol, chartLimit) : request(`/api/market/history/${requestedSymbol}?limit=${chartLimit}`))
     .catch(() => [])
     .then(candles => {
       if (!isCurrent() || requestedChartGeneration !== chartGeneration) return;
@@ -242,7 +244,7 @@ async function refresh() {
       renderChartStats(latestCandles, latestQuote);
     });
 
-  request(`/api/metrics/${requestedSymbol}`)
+  (bridge ? bridge.metrics(requestedSymbol) : request(`/api/metrics/${requestedSymbol}`))
     .catch(() => [])
     .then(metrics => {
       if (!isCurrent()) return;
@@ -250,7 +252,7 @@ async function refresh() {
       renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
     });
 
-  request(`/api/metrics/${requestedSymbol}/risks`)
+  (bridge ? bridge.riskSignals(requestedSymbol) : request(`/api/metrics/${requestedSymbol}/risks`))
     .catch(() => [])
     .then(risks => {
       if (!isCurrent()) return;
@@ -258,7 +260,7 @@ async function refresh() {
       renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
     });
 
-  request(`/api/intelligence/${requestedSymbol}/timeline`)
+  (bridge ? bridge.timeline(requestedSymbol) : request(`/api/intelligence/${requestedSymbol}/timeline`))
     .then(data => ({ ok: true, data }))
     .catch(error => ({ ok: false, error }))
     .then(result => {
@@ -269,7 +271,7 @@ async function refresh() {
     });
 
   if (authUser) {
-    request("/api/watchlist")
+    (bridge ? bridge.listWatchlist() : request("/api/watchlist"))
       .then(data => ({ ok: true, data }))
       .catch(error => ({ ok: false, error }))
       .then(result => {
@@ -382,7 +384,9 @@ async function addCurrentCompanyToWatchlist() {
   button.disabled = true;
   $("watchlistActionStatus").textContent = "正在加入…";
   try {
-    latestWatchlist = await request(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "POST" });
+    latestWatchlist = await (bridge
+      ? bridge.addToWatchlist(symbol)
+      : request(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "POST" }));
     watchlistLoadError = false;
     $("watchlistActionStatus").textContent = "已加入当前公司";
     renderWatchlist();
@@ -395,7 +399,9 @@ async function addCurrentCompanyToWatchlist() {
 async function removeFromWatchlist(companySymbol) {
   $("watchlistActionStatus").textContent = "正在移除…";
   try {
-    latestWatchlist = await request(`/api/watchlist/${encodeURIComponent(companySymbol)}`, { method: "DELETE" });
+    latestWatchlist = await (bridge
+      ? bridge.removeFromWatchlist(companySymbol)
+      : request(`/api/watchlist/${encodeURIComponent(companySymbol)}`, { method: "DELETE" }));
     watchlistLoadError = false;
     $("watchlistActionStatus").textContent = "已从关注列表移除";
     renderWatchlist();
@@ -824,11 +830,13 @@ async function runWorkflow() {
       $("symbolInput").value = symbol;
     }
     const workflowSymbol = symbol;
-    const task = await request("/api/research/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol })
-    });
+    const task = await (bridge
+      ? bridge.createResearchTask(symbol)
+      : request("/api/research/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol })
+        }));
     const result = await waitForResearchTask(task, currentWorkflowGeneration, workflowSymbol);
     if (!result.completed) {
       showAnalysisProgress("analysis", "任务仍在后台运行", "你可以继续查看行情和上一版结论；新报告完成后会自动更新。", true);
@@ -858,7 +866,9 @@ async function waitForResearchTask(task, currentWorkflowGeneration, workflowSymb
     }
     const tasks = attempt === 0
       ? [task]
-      : await request(`/api/research/tasks/${encodeURIComponent(task.taskId)}/progress`);
+      : await (bridge
+        ? bridge.getResearchTaskProgress(task.taskId)
+        : request(`/api/research/tasks/${encodeURIComponent(task.taskId)}/progress`));
     const failedTask = tasks.find(item => ["FAILED", "DEAD_LETTER"].includes(String(item.status)));
     if (failedTask) {
       throw new Error(failedTask.errorMessage || "分析任务未能完成");
@@ -925,7 +935,9 @@ function hideAnalysisProgress() {
 }
 
 async function refreshCompletedAnalysis(workflowSymbol, currentWorkflowGeneration) {
-  const aiAnalysis = await request(`/api/research/reports/${encodeURIComponent(workflowSymbol)}/latest`);
+  const aiAnalysis = await (bridge
+    ? bridge.latestReportTrace(workflowSymbol)
+    : request(`/api/research/reports/${encodeURIComponent(workflowSymbol)}/latest`));
   if (workflowSymbol !== symbol || currentWorkflowGeneration !== workflowGeneration) return;
   latestAiAnalysis = aiAnalysis;
   renderAnalysis(latestMetrics, latestRisks, latestQuote, aiAnalysis);
@@ -941,12 +953,14 @@ async function refreshCompletedAnalysis(workflowSymbol, currentWorkflowGeneratio
 }
 
 function refreshAnalysisInputs(workflowSymbol, currentWorkflowGeneration) {
-  request(`/api/metrics/${workflowSymbol}`).then(metrics => {
+  (bridge ? bridge.metrics(workflowSymbol) : request(`/api/metrics/${workflowSymbol}`))
+    .then(metrics => {
     if (workflowSymbol !== symbol || currentWorkflowGeneration !== workflowGeneration) return;
     latestMetrics = Array.isArray(metrics) ? metrics : [];
     renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
   }).catch(() => {});
-  request(`/api/metrics/${workflowSymbol}/risks`).then(risks => {
+  (bridge ? bridge.riskSignals(workflowSymbol) : request(`/api/metrics/${workflowSymbol}/risks`))
+    .then(risks => {
     if (workflowSymbol !== symbol || currentWorkflowGeneration !== workflowGeneration) return;
     latestRisks = Array.isArray(risks) ? risks : [];
     renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);

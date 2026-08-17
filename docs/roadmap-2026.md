@@ -47,8 +47,8 @@ gantt
 | RFC | Title | Issue | PR | LoC |
 | --- | --- | --- | --- | --- |
 | (impl) | Implementation PRs already on the wire | — | [#24](https://github.com/juanjuandog/FinSight-AI/pull/24) … [#34](https://github.com/juanjuandog/FinSight-AI/pull/34) | n/a |
-| 001 | Testcontainers Integration Test Suite | [#47](https://github.com/juanjuandog/FinSight-AI/issues/47) | [#35](https://github.com/juanjuandog/FinSight-AI/pull/35) / [#40](https://github.com/juanjuandog/FinSight-AI/pull/40) | ~2,800 |
-| 002 | OpenAPI → TypeScript Typed API Client | [#48](https://github.com/juanjuandog/FinSight-AI/issues/48) | [#36](https://github.com/juanjuandog/FinSight-AI/pull/36) / [#40](https://github.com/juanjuandog/FinSight-AI/pull/40) | ~1,800 |
+| 001 | Testcontainers Integration Test Suite | [#47](https://github.com/juanjuandog/FinSight-AI/issues/47) | [#35](https://github.com/juanjuandog/FinSight-AI/pull/35) | ~2,800 |
+| 002 | OpenAPI → TypeScript Typed API Client | [#48](https://github.com/juanjuandog/FinSight-AI/issues/48) | [#36](https://github.com/juanjuandog/FinSight-AI/pull/36) (RFC) / [#76](https://github.com/juanjuandog/FinSight-AI/pull/76) (impl, close-out) | ~1,800 |
 
 **Exit criteria:**
 

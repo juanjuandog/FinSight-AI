@@ -26,10 +26,10 @@ def request_once(url: str, timeout: float) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Measure FinSight API latency.")
-    parser.add_argument("--url", default="http://localhost:8080/actuator/health")
-    parser.add_argument("--requests", type=int, default=100)
-    parser.add_argument("--warmup", type=int, default=5)
-    parser.add_argument("--timeout", type=float, default=10)
+    parser.add_argument("--url", default="http://localhost:8080/actuator/health", help="Health endpoint to benchmark.")
+    parser.add_argument("--requests", type=int, default=100, help="Measured requests to send.")
+    parser.add_argument("--warmup", type=int, default=5, help="Warm-up requests excluded from the report.")
+    parser.add_argument("--timeout", type=float, default=10, help="Per-request timeout in seconds.")
     args = parser.parse_args()
 
     for _ in range(max(0, args.warmup)):

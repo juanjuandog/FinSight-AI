@@ -30,9 +30,10 @@ jobs:
 
       - name: Build OpenAPI contract artifact
         working-directory: backend
-        run: mvn -DskipTests -q spring-boot:run &
-        sleep 60
-        curl -fsS http://localhost:8080/v3/api-docs > /tmp/openapi.json || echo "OpenAPI capture deferred to follow-up"
+        run: |
+          mvn -DskipTests -q spring-boot &
+          sleep 60
+          curl -fsS http://localhost:8080/v3/api-docs > /tmp/openapi.json || echo "OpenAPI capture deferred to follow-up"
 
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@0.24.0

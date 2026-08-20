@@ -90,6 +90,14 @@ Default ports:
 
 Stop the conflicting process or edit `docker-compose.yml` / Spring configuration.
 
+For a temporary local override, pass a different Spring port when starting the
+backend:
+
+```bash
+cd backend
+mvn spring-boot:run -Dspring-boot.run.arguments="--server.port=8081"
+```
+
 ## Testcontainers Smoke Test Is Skipped
 
 `mvn test` includes a Testcontainers smoke test for PostgreSQL/pgvector and RabbitMQ. If Docker is not available, that smoke test is skipped while unit tests still run.

@@ -2,10 +2,21 @@ import unittest
 import os
 from unittest.mock import patch
 
-from app.main import StockAnalysisRequest, analyze_stock
+from app.main import StockAnalysisRequest, analyze_stock, is_supported_a_stock_code, normalize_stock_code
 
 
 class StockAnalysisTest(unittest.TestCase):
+    def test_normalizes_exchange_prefixed_stock_codes(self):
+        for value, expected in (
+            ("SH600519", "600519"),
+            ("SZ300750", "300750"),
+            ("BJ920002", "920002"),
+        ):
+            with self.subTest(value=value):
+                symbol = normalize_stock_code(value)
+                self.assertEqual(symbol, expected)
+                self.assertTrue(is_supported_a_stock_code(symbol))
+
     def test_analyze_stock_fallback_keeps_persisted_model_name_bounded(self):
         request = StockAnalysisRequest(
             company={

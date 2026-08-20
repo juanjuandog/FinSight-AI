@@ -21,4 +21,10 @@ class ExchangeResolverTest {
         assertThat(resolver.isSupportedAStockCode("920002")).isTrue();
         assertThat(resolver.isSupportedAStockCode("12345")).isFalse();
     }
+
+    @Test
+    void trimsAndNormalizesSymbolsBeforeResolving() {
+        assertThat(resolver.normalizeSymbol("  sh600519 ")).isEqualTo("SH600519");
+        assertThat(resolver.sinaPrefix(" 600519 ")).isEqualTo("sh");
+    }
 }

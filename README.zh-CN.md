@@ -179,6 +179,14 @@ mvn test
 
 FinSight 当前面向 A 股研究和本地 Production-like 演示，已提供邮箱账户、服务端会话和个人关注列表。团队空间、受监管投研流程、交易执行、组合建议和多市场支持不在当前范围内。
 
+## 贡献者
+
+感谢所有为 FinSight AI 做出贡献的朋友。
+
+<a href="https://github.com/juanjuandog/FinSight-AI/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=juanjuandog/FinSight-AI" alt="FinSight AI 贡献者">
+</a>
+
 ## License
 
 项目基于 [MIT License](LICENSE) 发布。

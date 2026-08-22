@@ -179,6 +179,14 @@ mvn test
 
 FinSight currently targets A-share research and local, production-like demonstrations, with email accounts, server-side sessions, and private watchlists. Team workspaces, regulated research workflows, trade execution, portfolio advice, and multi-market coverage remain outside the current scope.
 
+## Contributors
+
+Thanks to everyone who has contributed to FinSight AI.
+
+<a href="https://github.com/juanjuandog/FinSight-AI/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=juanjuandog/FinSight-AI" alt="FinSight AI contributors">
+</a>
+
 ## License
 
 Released under the [MIT License](LICENSE).

@@ -5,6 +5,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -14,7 +16,7 @@ import java.util.Optional;
 @Component
 public class MarketDataCache {
     private final Cache<String, MarketQuote> quoteCache;
-    private final Cache<String, java.util.List<MarketCandle>> historyCache;
+    private final Cache<String, MarketHistoryResponse> historyCache;
 
     public MarketDataCache() {
         this.quoteCache = Caffeine.newBuilder()
@@ -35,12 +37,33 @@ public class MarketDataCache {
         quoteCache.put(symbol, quote);
     }
 
-    public Optional<java.util.List<MarketCandle>> getHistory(String symbol, int limit) {
-        return Optional.ofNullable(historyCache.getIfPresent(historyKey(symbol, limit)));
+    /**
+     * Backwards-compatible list view for callers that only need real-mode candles.
+     */
+    public Optional<List<MarketCandle>> getHistory(String symbol, int limit) {
+        return getHistoryResponse(symbol, limit, false).map(MarketHistoryResponse::candles);
     }
 
-    public void putHistory(String symbol, int limit, java.util.List<MarketCandle> candles) {
-        historyCache.put(historyKey(symbol, limit), candles);
+    /**
+     * Backwards-compatible real-mode write used by lightweight cache tests and older callers.
+     */
+    public void putHistory(String symbol, int limit, List<MarketCandle> candles) {
+        putHistoryResponse(symbol, limit, false, new MarketHistoryResponse(
+                candles,
+                "EASTMONEY_HISTORY",
+                Instant.now(),
+                false,
+                candles != null && !candles.isEmpty(),
+                null
+        ));
+    }
+
+    public Optional<MarketHistoryResponse> getHistoryResponse(String symbol, int limit, boolean demo) {
+        return Optional.ofNullable(historyCache.getIfPresent(historyKey(symbol, limit, demo)));
+    }
+
+    public void putHistoryResponse(String symbol, int limit, boolean demo, MarketHistoryResponse response) {
+        historyCache.put(historyKey(symbol, limit, demo), response);
     }
 
     public void invalidate(String symbol) {
@@ -48,7 +71,7 @@ public class MarketDataCache {
         historyCache.asMap().keySet().removeIf(k -> k.startsWith(symbol + ":"));
     }
 
-    private static String historyKey(String symbol, int limit) {
-        return symbol + ":" + limit;
+    private static String historyKey(String symbol, int limit, boolean demo) {
+        return symbol + ":" + limit + ":" + demo;
     }
 }

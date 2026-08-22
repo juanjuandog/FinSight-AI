@@ -2,10 +2,13 @@ package com.finsight.market;
 
 import com.finsight.domain.model.Company;
 import com.finsight.domain.repository.CompanyRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -13,6 +16,10 @@ import java.util.List;
 
 @Service
 public class MarketDataService {
+    private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
+    private static final String HISTORY_SOURCE = "EASTMONEY_HISTORY";
+    private static final String HISTORY_UNAVAILABLE = "历史行情暂不可用";
+
     private final MarketDataClient marketDataClient;
     private final EastmoneyMarketHistoryClient marketHistoryClient;
     private final CompanyRepository companyRepository;
@@ -56,25 +63,41 @@ public class MarketDataService {
         }
     }
 
+    /**
+     * Returns real historical data by default.  Synthetic candles are only generated when the
+     * caller explicitly opts into demo mode.
+     */
     public List<MarketCandle> history(String symbol, int limit) {
-        String normalized = exchangeResolver.normalizeSymbol(symbol);
-        int bounded = Math.min(Math.max(limit, 20), 260);
-        return cache.getHistory(normalized, bounded).orElseGet(() -> fetchHistory(normalized, bounded));
+        return history(symbol, limit, false).candles();
     }
 
-    private List<MarketCandle> fetchHistory(String normalized, int bounded) {
+    public MarketHistoryResponse history(String symbol, int limit, boolean demo) {
+        String normalized = exchangeResolver.normalizeSymbol(symbol);
+        int bounded = Math.min(Math.max(limit, 20), 260);
+        return cache.getHistoryResponse(normalized, bounded, demo)
+                .orElseGet(() -> fetchHistory(normalized, bounded, demo));
+    }
+
+    private MarketHistoryResponse fetchHistory(String normalized, int bounded, boolean demo) {
         try {
             List<MarketCandle> candles = marketHistoryClient.daily(normalized, bounded);
-            if (!candles.isEmpty()) {
-                cache.putHistory(normalized, bounded, candles);
-                return candles;
+            if (candles != null && !candles.isEmpty()) {
+                MarketHistoryResponse response = MarketHistoryResponse.live(candles, Instant.now());
+                cache.putHistoryResponse(normalized, bounded, demo, response);
+                return response;
             }
-        } catch (RuntimeException ignored) {
-            // Historical chart should remain usable in offline demos.
+        } catch (RuntimeException ex) {
+            log.warn("Historical market data unavailable for {}: {}", normalized, ex.getMessage());
         }
-        List<MarketCandle> candles = fallbackHistory(normalized, bounded);
-        cache.putHistory(normalized, bounded, candles);
-        return candles;
+
+        if (demo) {
+            MarketHistoryResponse response = MarketHistoryResponse.demo(fallbackHistory(normalized, bounded), Instant.now());
+            cache.putHistoryResponse(normalized, bounded, true, response);
+            return response;
+        }
+
+        // Do not cache an unavailable response: a retry should be able to observe a recovered provider.
+        return MarketHistoryResponse.unavailable(HISTORY_SOURCE, Instant.now(), HISTORY_UNAVAILABLE);
     }
 
     private MarketQuote fallbackQuote(String symbol, String reason) {

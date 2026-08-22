@@ -4,6 +4,7 @@ let suggestionTimer = null;
 let chartLimit = 120;
 let latestQuote = null;
 let latestCandles = [];
+let latestHistory = null;
 let latestAiAnalysis = null;
 let latestMetrics = [];
 let latestRisks = [];
@@ -191,6 +192,7 @@ async function refresh() {
     loadedSymbol = requestedSymbol;
     latestQuote = null;
     latestCandles = [];
+    latestHistory = null;
     latestAiAnalysis = null;
     latestMetrics = [];
     latestRisks = [];
@@ -198,6 +200,7 @@ async function refresh() {
     renderAnalysis([], [], null, null);
     renderChart([]);
     renderChartStats([], null);
+    renderChartStatus(null);
   }
 
   const companiesRequest = request("/api/companies?limit=200")
@@ -234,12 +237,10 @@ async function refresh() {
     });
 
   request(`/api/market/history/${requestedSymbol}?limit=${chartLimit}`)
-    .catch(() => [])
-    .then(candles => {
+    .catch(error => unavailableHistory(error))
+    .then(history => {
       if (!isCurrent() || requestedChartGeneration !== chartGeneration) return;
-      latestCandles = Array.isArray(candles) ? candles : [];
-      renderChart(latestCandles);
-      renderChartStats(latestCandles, latestQuote);
+      applyHistoryResponse(history);
     });
 
   request(`/api/metrics/${requestedSymbol}`)
@@ -546,7 +547,69 @@ function renderGuidancePanels(guidance, fallbackSupporting = [], fallbackRisks =
   $("dataCompleteness").hidden = false;
 }
 
-function renderChart(candles) {
+function normalizeHistoryResponse(response) {
+  if (Array.isArray(response)) {
+    return {
+      candles: response,
+      source: response.length ? "EASTMONEY_HISTORY" : "UNAVAILABLE",
+      fetchedAt: null,
+      simulated: false,
+      available: response.length > 0,
+      error: response.length ? null : "历史行情暂不可用"
+    };
+  }
+  const value = response && typeof response === "object" ? response : {};
+  const candles = Array.isArray(value.candles) ? value.candles : [];
+  return {
+    ...value,
+    candles,
+    simulated: Boolean(value.simulated),
+    available: value.available === true && candles.length > 0
+  };
+}
+
+function unavailableHistory() {
+  return {
+    candles: [],
+    source: "UNAVAILABLE",
+    fetchedAt: new Date().toISOString(),
+    simulated: false,
+    available: false,
+    error: "历史行情暂不可用"
+  };
+}
+
+function applyHistoryResponse(response) {
+  const history = normalizeHistoryResponse(response);
+  latestHistory = history;
+  latestCandles = history.candles;
+  const emptyMessage = history.available ? null : "历史行情暂不可用，未展示模拟 K 线。";
+  renderChart(latestCandles, emptyMessage);
+  renderChartStats(latestCandles, latestQuote, history);
+  renderChartStatus(history);
+}
+
+function renderChartStatus(history) {
+  const source = $("chartSource");
+  const retry = $("retryChart");
+  if (!source || !retry) return;
+  if (!history) {
+    source.textContent = "历史行情加载中…";
+    retry.hidden = true;
+    return;
+  }
+  const fetchedAt = formatDateTime(history.fetchedAt);
+  if (!history.available) {
+    source.textContent = history.error || "历史行情暂不可用，未展示模拟 K 线。";
+    retry.hidden = false;
+    return;
+  }
+  const sourceLabel = history.simulated ? "演示数据（模拟）" : marketSourceName(history.source);
+  source.textContent = fetchedAt ? sourceLabel + " · 抓取于 " + fetchedAt : sourceLabel;
+  retry.hidden = true;
+}
+
+function renderChart(candles, emptyMessage = null) {
   const canvas = $("priceChart");
   const tooltip = $("chartTooltip");
   const ctx = canvas.getContext("2d");
@@ -564,7 +627,7 @@ function renderChart(candles) {
   canvas.onmouseleave = null;
 
   if (!Array.isArray(candles) || candles.length < 2) {
-    drawEmptyChart(ctx, width, height);
+    drawEmptyChart(ctx, width, height, emptyMessage || "暂无历史行情数据，等待行情源返回 K 线。");
     return;
   }
 
@@ -575,7 +638,7 @@ function renderChart(candles) {
   })).filter(candle => candle.close > 0);
 
   if (data.length < 2) {
-    drawEmptyChart(ctx, width, height);
+    drawEmptyChart(ctx, width, height, emptyMessage || "暂无历史行情数据，等待行情源返回 K 线。");
     return;
   }
 
@@ -624,7 +687,7 @@ function renderChart(candles) {
   };
 }
 
-function drawEmptyChart(ctx, width, height) {
+function drawEmptyChart(ctx, width, height, message) {
   ctx.clearRect(0, 0, width, height);
   ctx.strokeStyle = cssToken("--chart-grid", "rgba(117, 107, 88, .16)");
   ctx.lineWidth = 1;
@@ -637,7 +700,7 @@ function drawEmptyChart(ctx, width, height) {
   }
   ctx.fillStyle = cssToken("--chart-label", "#6F736F");
   ctx.font = "13px IBM Plex Sans, PingFang SC, sans-serif";
-  ctx.fillText("暂无历史行情数据，等待行情源返回 K 线。", 28, 42);
+  ctx.fillText(message, 28, 42);
 }
 
 function drawGrid(ctx, width, pad, priceBottom, minPrice, maxPrice) {
@@ -688,7 +751,11 @@ function drawCrosshair(ctx, x, top, bottom) {
   ctx.restore();
 }
 
-function renderChartStats(candles, quote) {
+function renderChartStats(candles, quote, history = latestHistory) {
+  if (history && history.available === false) {
+    $("chartStats").innerHTML = '<p class="chart-error">历史行情暂不可用，未展示模拟 K 线。</p>';
+    return;
+  }
   const latest = candles?.[candles.length - 1] || null;
   const high = candles?.length ? Math.max(...candles.map(candle => numeric(candle.close))) : numeric(quote?.currentPrice);
   const low = candles?.length ? Math.min(...candles.map(candle => numeric(candle.close))) : numeric(quote?.currentPrice);
@@ -1500,6 +1567,8 @@ function marketSourceName(value) {
     SINA_QUOTE: "新浪行情",
     TENCENT_QUOTE: "腾讯行情",
     EASTMONEY_QUOTE: "东方财富",
+    EASTMONEY_HISTORY: "东方财富历史行情",
+    LOCAL_DEMO: "演示数据（模拟）",
     LOCAL_FALLBACK: "本地快照",
     LOCAL_ERROR: "本地快照"
   })[value] || value || "待同步";
@@ -1539,12 +1608,13 @@ document.querySelectorAll(".range-tab").forEach(button => {
   });
 });
 
+$("retryChart").addEventListener("click", refreshChart);
 async function refreshChart() {
   const requestedSymbol = symbol;
   const requestedLimit = chartLimit;
   const requestGeneration = ++chartGeneration;
   try {
-    const candles = await request(`/api/market/history/${requestedSymbol}?limit=${requestedLimit}`);
+    const history = await request(`/api/market/history/${requestedSymbol}?limit=${requestedLimit}`);
     if (
       requestGeneration !== chartGeneration
       || requestedSymbol !== symbol
@@ -1552,13 +1622,10 @@ async function refreshChart() {
     ) {
       return;
     }
-    latestCandles = Array.isArray(candles) ? candles : [];
-    renderChart(latestCandles);
-    renderChartStats(latestCandles, latestQuote);
-  } catch {
+    applyHistoryResponse(history);
+  } catch (error) {
     if (requestGeneration === chartGeneration) {
-      $("chartStats").innerHTML = '<p class="chart-error">价格历史暂时无法加载</p>';
-      renderChart([]);
+      applyHistoryResponse(unavailableHistory(error));
     }
   }
 }

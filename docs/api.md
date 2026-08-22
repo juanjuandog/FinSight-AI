@@ -36,6 +36,27 @@ Scoring thresholds and weights are configured under
 and valuation weights must add up to `1.0`; invalid combinations stop the
 application at startup instead of silently changing the score scale.
 
+## Historical Market Data
+
+```bash
+curl "http://localhost:8080/api/market/history/600519?limit=120"
+```
+
+The history endpoint returns an envelope rather than an untyped candle array:
+
+```json
+{
+  "candles": [],
+  "source": "EASTMONEY_HISTORY",
+  "fetchedAt": "2026-08-22T08:00:00Z",
+  "simulated": false,
+  "available": false,
+  "error": "历史行情暂不可用"
+}
+```
+
+Provider failures return `available: false` with no candles and are not cached, so the client can retry. Deterministic candles are available only when `demo=true` is explicitly supplied; those responses use `source: LOCAL_DEMO` and `simulated: true`.
+
 ## Research Task
 
 Submit a recoverable research task for one company:

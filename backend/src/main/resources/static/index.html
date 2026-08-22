@@ -92,7 +92,10 @@
             <canvas id="priceChart" aria-label="股票历史收盘价折线图"></canvas>
             <div id="chartTooltip" class="chart-tooltip" hidden></div>
           </div>
-          <p class="chart-source">数据来源以最新行情快照为准</p>
+          <div id="chartDataStatus" class="chart-source" role="status" aria-live="polite">
+            <span id="chartSource">历史行情加载中…</span>
+            <button id="retryChart" class="scan-retry-button" type="button" hidden>重试</button>
+          </div>
         </section>
 
         <section id="health" class="metric-panel" aria-labelledby="metricHeading">

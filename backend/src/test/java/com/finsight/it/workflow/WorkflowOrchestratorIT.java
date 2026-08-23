@@ -27,6 +27,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
@@ -132,7 +133,12 @@ class WorkflowOrchestratorIT extends AbstractPostgresRedisIT {
         assertThat(recovered.status()).isEqualTo(WorkflowStatus.RETRYING);
         assertThat(recovered.stage()).isEqualTo(AgentWorkflowStage.RECOVERING);
         assertThat(recovered.leaseOwner()).isNull();
-        verify(taskPublisher).publish(recovered);
+        verify(taskPublisher).publish(argThat(published ->
+                published.id().equals(recovered.id())
+                        && published.status() == WorkflowStatus.RETRYING
+                        && published.stage() == AgentWorkflowStage.RECOVERING
+                        && published.fencingToken() == null
+        ));
     }
 
     private WorkflowTask createTask(String type, String idempotencyKey) {

@@ -14,6 +14,7 @@ import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Map;
 
@@ -94,12 +95,14 @@ public class RabbitWorkflowConfiguration {
     @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
             ConnectionFactory connectionFactory,
-            MessageConverter workflowMessageConverter
+            MessageConverter workflowMessageConverter,
+            @Value("${spring.rabbitmq.listener.simple.auto-startup:true}") boolean autoStartup
     ) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(workflowMessageConverter);
         factory.setDefaultRequeueRejected(false);
+        factory.setAutoStartup(autoStartup);
         factory.setConcurrentConsumers(1);
         factory.setMaxConcurrentConsumers(4);
         return factory;

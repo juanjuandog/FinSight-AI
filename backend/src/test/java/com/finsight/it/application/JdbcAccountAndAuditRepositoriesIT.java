@@ -147,7 +147,7 @@ class JdbcAccountAndAuditRepositoriesIT extends AbstractPostgresIT {
 
     @Test
     void auditQueryFiltersByEventTypeAndUsesNewestFirstOrdering() {
-        Instant now = Instant.now();
+        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         auditLogRepository.save(audit("auth.login", "owner@example.com", now.minusSeconds(10)));
         auditLogRepository.save(audit("auth.login", "owner@example.com", now));
         auditLogRepository.save(audit("auth.logout", "owner@example.com", now.plusSeconds(1)));

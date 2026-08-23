@@ -25,7 +25,13 @@ class JdbcWorkflowTaskRepositoryIT extends AbstractPostgresIT {
 
         repository.save(task);
 
-        assertThat(repository.findById("task-1")).contains(task);
+        WorkflowTask saved = repository.findById("task-1").orElseThrow();
+        assertThat(saved)
+                .usingRecursiveComparison()
+                .ignoringFields("createdAt", "updatedAt")
+                .isEqualTo(task);
+        assertThat(saved.createdAt()).isEqualTo(task.createdAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+        assertThat(saved.updatedAt()).isEqualTo(task.updatedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
     }
 
     @Test
@@ -33,7 +39,10 @@ class JdbcWorkflowTaskRepositoryIT extends AbstractPostgresIT {
         WorkflowTask task = task("task-1", "key-1", Instant.now(), Map.of());
         repository.save(task);
 
-        assertThat(repository.findByIdempotencyKey("key-1")).contains(task);
+        assertThat(repository.findByIdempotencyKey("key-1"))
+                .get()
+                .extracting(WorkflowTask::id, WorkflowTask::idempotencyKey)
+                .containsExactly("task-1", "key-1");
     }
 
     @Test
@@ -64,7 +73,13 @@ class JdbcWorkflowTaskRepositoryIT extends AbstractPostgresIT {
 
         WorkflowTask running = created.running(AgentWorkflowStage.AI_ANALYZING, lease);
 
-        assertThat(repository.saveIfOwned(running, WorkflowStatus.CREATED, null)).contains(running);
+        assertThat(repository.saveIfOwned(running, WorkflowStatus.CREATED, null))
+                .get()
+                .satisfies(saved -> {
+                    assertThat(saved.status()).isEqualTo(WorkflowStatus.RUNNING);
+                    assertThat(saved.stage()).isEqualTo(AgentWorkflowStage.AI_ANALYZING);
+                    assertThat(saved.fencingToken()).isEqualTo(10);
+                });
         assertThat(repository.findById("task-1").orElseThrow().fencingToken()).isEqualTo(10);
     }
 

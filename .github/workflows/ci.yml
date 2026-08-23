@@ -46,7 +46,7 @@ jobs:
 
       - name: Upload integration reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failsafe-reports
           path: backend/target/failsafe-reports/
@@ -63,4 +63,4 @@ jobs:
         run: bash -n scripts/*.sh
 
       - name: Check Python service syntax
-        run: python -m py_compile ai-service/app/main.py ai-service/app/model_runtime.py scripts/benchmark_api.py
+        run: python3 -m py_compile ai-service/app/main.py ai-service/app/model_runtime.py scripts/benchmark_api.py

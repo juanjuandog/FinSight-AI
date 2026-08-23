@@ -138,6 +138,7 @@ class JdbcWorkflowTaskRepositoryIT extends AbstractPostgresIT {
     }
 
     private WorkflowTask task(String id, String key, Instant timestamp, Map<String, Object> payload) {
+        Instant databaseTimestamp = timestamp.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         return new WorkflowTask(
                 id,
                 WorkflowTaskType.STOCK_AI_ANALYSIS,
@@ -145,8 +146,8 @@ class JdbcWorkflowTaskRepositoryIT extends AbstractPostgresIT {
                 WorkflowStatus.CREATED,
                 AgentWorkflowStage.CREATED,
                 0,
-                timestamp,
-                timestamp,
+                databaseTimestamp,
+                databaseTimestamp,
                 payload,
                 null,
                 null,

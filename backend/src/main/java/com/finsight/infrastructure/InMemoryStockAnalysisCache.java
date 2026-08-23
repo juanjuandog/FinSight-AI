@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Profile("!redis")
 public class InMemoryStockAnalysisCache implements StockAnalysisCache {
     private final ConcurrentHashMap<String, CacheEntry> entries = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, BinaryCacheEntry> binaryEntries = new ConcurrentHashMap<>();
 
     @Override
     public Optional<StockAiAnalysisService.StockAiAnalysisResponse> get(String key) {
@@ -33,9 +34,30 @@ public class InMemoryStockAnalysisCache implements StockAnalysisCache {
         entries.put(key, new CacheEntry(response, Instant.now().plus(ttl)));
     }
 
+    @Override
+    public Optional<byte[]> getBinary(String key) {
+        BinaryCacheEntry entry = binaryEntries.get(key);
+        if (entry == null) {
+            return Optional.empty();
+        }
+        if (entry.expiresAt().isBefore(Instant.now())) {
+            binaryEntries.remove(key);
+            return Optional.empty();
+        }
+        return Optional.of(entry.value().clone());
+    }
+
+    @Override
+    public void putBinary(String key, byte[] value, Duration ttl) {
+        binaryEntries.put(key, new BinaryCacheEntry(value.clone(), Instant.now().plus(ttl)));
+    }
+
     private record CacheEntry(
             StockAiAnalysisService.StockAiAnalysisResponse response,
             Instant expiresAt
     ) {
+    }
+
+    private record BinaryCacheEntry(byte[] value, Instant expiresAt) {
     }
 }

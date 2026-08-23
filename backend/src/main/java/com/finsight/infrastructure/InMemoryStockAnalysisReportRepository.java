@@ -26,6 +26,13 @@ public class InMemoryStockAnalysisReportRepository implements StockAnalysisRepor
     }
 
     @Override
+    public Optional<StockAnalysisReport> findById(String reportId) {
+        return reports.stream()
+                .filter(report -> report.id().equals(reportId))
+                .findFirst();
+    }
+
+    @Override
     public Optional<StockAnalysisReport> findLatest(String companySymbol) {
         return reports.stream()
                 .filter(report -> report.companySymbol().equals(companySymbol))

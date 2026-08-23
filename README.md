@@ -167,6 +167,7 @@ mvn test
 
 - [Architecture](docs/architecture.md)
 - [Research API](docs/api.md)
+- [Report Diff and Export User Guide](docs/user-guide.md)
 - [Agent Workflow Design](docs/design-agent-workflow.md)
 - [Benchmark and Evaluation](docs/benchmark.md)
 - [Product Requirements](docs/product-requirements.md)

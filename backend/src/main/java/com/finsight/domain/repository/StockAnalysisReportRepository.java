@@ -8,6 +8,8 @@ import java.util.Optional;
 public interface StockAnalysisReportRepository {
     StockAnalysisReport save(StockAnalysisReport report);
 
+    Optional<StockAnalysisReport> findById(String reportId);
+
     Optional<StockAnalysisReport> findLatest(String companySymbol);
 
     List<StockAnalysisReport> findByCompanySymbol(String companySymbol, int limit);

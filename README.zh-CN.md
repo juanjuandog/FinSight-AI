@@ -167,6 +167,7 @@ mvn test
 
 - [系统架构](docs/architecture.md)
 - [Research API](docs/api.md)
+- [报告对比与导出使用指南](docs/user-guide.md)
 - [Agent 工作流设计](docs/design-agent-workflow.md)
 - [Benchmark 与评测](docs/benchmark.md)
 - [产品需求](docs/product-requirements.md)

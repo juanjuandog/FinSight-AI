@@ -66,6 +66,17 @@ public class JdbcStockAnalysisReportRepository implements StockAnalysisReportRep
     }
 
     @Override
+    public Optional<StockAnalysisReport> findById(String reportId) {
+        return jdbcTemplate.query("""
+                SELECT id, company_symbol, rating, summary, positive_points::text, risk_points::text,
+                       confidence, citations::text, model, source, ai_generated, context_hash,
+                       data_snapshot_hash, report_version, generated_at
+                FROM stock_analysis_reports
+                WHERE id = ?
+                """, this::mapReport, reportId).stream().findFirst();
+    }
+
+    @Override
     public Optional<StockAnalysisReport> findLatest(String companySymbol) {
         return jdbcTemplate.query("""
                 SELECT id, company_symbol, rating, summary, positive_points::text, risk_points::text,

@@ -116,6 +116,62 @@ Trace fields:
 - `citations`: model-facing citation labels.
 - `evidence`: retrieved chunks with document id, section, channel, text, and score.
 
+## Report History, Diff, and Export
+
+List the most recent report versions (newest first):
+
+```bash
+curl "http://localhost:8080/api/research/stock/600519/reports?limit=8"
+```
+
+`limit` is clamped to `1..50`. Each entry is a complete immutable
+`StockAnalysisReport`, including its `id`, `reportVersion`, `generatedAt`,
+`contextHash`, and `dataSnapshotHash`.
+
+Compare two reports that belong to the same company:
+
+```bash
+curl http://localhost:8080/api/research/stock/600519/reports/report-1/diff/report-2
+```
+
+The first id is the earlier (`from`) version and the second is the later (`to`)
+version. The response contains field-level diffs for `rating`, `summary`,
+`positivePoints`, `riskPoints`, and `citations`. Each field includes its original
+`before` and `after` values plus Myers diff `segments` whose operation is
+`EQUAL`, `INSERT`, or `DELETE`. Provenance fields make data changes explicit:
+
+```json
+{
+  "companySymbol": "600519",
+  "from": { "reportId": "report-1", "reportVersion": 1 },
+  "to": { "reportId": "report-2", "reportVersion": 2 },
+  "rating": {
+    "before": ["谨慎"],
+    "after": ["积极"],
+    "segments": [
+      { "op": "DELETE", "text": "谨慎" },
+      { "op": "INSERT", "text": "积极" }
+    ],
+    "changed": true
+  },
+  "contextHashChanged": true,
+  "dataSnapshotHashChanged": true,
+  "reportVersionDelta": 1
+}
+```
+
+Download one version as CommonMark or PDF:
+
+```bash
+curl -OJ http://localhost:8080/api/research/stock/600519/reports/report-2.md
+curl -OJ http://localhost:8080/api/research/stock/600519/reports/report-2.pdf
+```
+
+Markdown uses `text/markdown; charset=UTF-8`. PDF uses `application/pdf`, embeds
+a Chinese-capable font, and is cached for 24 hours under a report-specific binary
+cache key. Both responses set an attachment filename and private five-minute HTTP
+cache policy. Unknown reports, or ids belonging to another symbol, return `404`.
+
 ## Lower-Level APIs
 
 - `GET /api/workflows/summary`: workflow counts and stage distribution.

@@ -20,6 +20,8 @@
         <java.version>17</java.version>
         <skipITs>true</skipITs>
         <jacoco.skip>true</jacoco.skip>
+        <commonmark.version>0.30.0</commonmark.version>
+        <openpdf.version>2.0.5</openpdf.version>
     </properties>
 
     <dependencies>
@@ -87,6 +89,16 @@
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>${openpdf.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

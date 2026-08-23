@@ -225,6 +225,35 @@
           </div>
           <button id="openAnalysisEvidence" class="text-action" type="button">查看相关证据</button>
         </section>
+
+        <section class="report-archive" aria-labelledby="reportArchiveHeading">
+          <header class="report-archive-heading">
+            <div>
+              <span>研究档案</span>
+              <h2 id="reportArchiveHeading">报告版本记录</h2>
+              <p>对照数据快照与结论变化，或下载单个版本留档。</p>
+            </div>
+            <label class="report-compare-toggle" for="comparePreviousToggle">
+              <input id="comparePreviousToggle" type="checkbox" disabled>
+              <span aria-hidden="true"></span>
+              <strong>与上一版对比</strong>
+            </label>
+          </header>
+          <p id="reportHistoryStatus" class="report-history-status" role="status" aria-live="polite">正在读取版本记录…</p>
+          <ol id="reportHistoryList" class="report-history-list" aria-label="报告版本记录"></ol>
+
+          <section id="reportDiffPanel" class="report-diff-panel" aria-labelledby="reportDiffHeading" aria-live="polite" hidden>
+            <header class="report-diff-heading">
+              <div>
+                <span>版本对照</span>
+                <h2 id="reportDiffHeading">最新报告与上一版</h2>
+                <p id="reportDiffMeta">正在读取差异…</p>
+              </div>
+              <button id="closeReportDiff" class="text-action" type="button">收起对比</button>
+            </header>
+            <div id="reportDiffFields" class="report-diff-fields"></div>
+          </section>
+        </section>
       </main>
 
       <main id="evidenceWorkspace" class="workspace-view evidence-workspace" data-workspace-view="evidence" hidden>

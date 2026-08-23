@@ -6,9 +6,18 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.finsight.application.AuthenticationService;
+import com.finsight.application.ReportDiffService;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(ReportDiffService.ReportNotFoundException.class)
+    public ProblemDetail handleReportNotFound(ReportDiffService.ReportNotFoundException ex) {
+        ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+        detail.setTitle("Research report not found");
+        detail.setDetail(ex.getMessage());
+        return detail;
+    }
+
     @ExceptionHandler(AuthenticationService.AuthenticationRequiredException.class)
     public ProblemDetail handleUnauthorized(AuthenticationService.AuthenticationRequiredException ex) {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);

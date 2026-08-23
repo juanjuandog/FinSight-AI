@@ -9,6 +9,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Optional;
 
 @Component
@@ -44,7 +45,29 @@ public class RedisStockAnalysisCache implements StockAnalysisCache {
         }
     }
 
+    @Override
+    public Optional<byte[]> getBinary(String key) {
+        String raw = redisTemplate.opsForValue().get(binaryRedisKey(key));
+        if (raw == null || raw.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Base64.getDecoder().decode(raw));
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public void putBinary(String key, byte[] value, Duration ttl) {
+        redisTemplate.opsForValue().set(binaryRedisKey(key), Base64.getEncoder().encodeToString(value), ttl);
+    }
+
     private String redisKey(String key) {
         return "finsight:stock-analysis:" + key;
+    }
+
+    private String binaryRedisKey(String key) {
+        return "finsight:stock-analysis-binary:" + key;
     }
 }

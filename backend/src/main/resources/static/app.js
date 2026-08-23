@@ -10,6 +10,8 @@ let latestMetrics = [];
 let latestRisks = [];
 let latestEvents = [];
 let latestWatchlist = [];
+let latestReports = [];
+let reportDiffGeneration = 0;
 let eventsLoadError = false;
 let watchlistLoadError = false;
 let evidenceScope = "company";
@@ -196,6 +198,8 @@ async function refresh() {
     latestAiAnalysis = null;
     latestMetrics = [];
     latestRisks = [];
+    latestReports = [];
+    resetReportArchive();
     updateCompanyCard();
     renderAnalysis([], [], null, null);
     renderChart([]);
@@ -258,6 +262,8 @@ async function refresh() {
       latestRisks = Array.isArray(risks) ? risks : [];
       renderAnalysis(latestMetrics, latestRisks, latestQuote, latestAiAnalysis);
     });
+
+  refreshReportHistory(requestedSymbol, isCurrent);
 
   request(`/api/intelligence/${requestedSymbol}/timeline`)
     .then(data => ({ ok: true, data }))
@@ -522,6 +528,157 @@ function renderAnalysis(metrics, risks, quote, aiAnalysis = null) {
   $("analysisUpdatedAt").textContent = aiAnalysis ? analysisMeta(aiAnalysis) : quote?.tradeDate && quote?.tradeTime ? `${quote.tradeDate} ${quote.tradeTime}` : "基于当前数据";
   $("analysisUpdatedAt").hidden = false;
   $("healthList").innerHTML = checks.map(healthCard).join("");
+}
+
+function resetReportArchive() {
+  reportDiffGeneration += 1;
+  $("comparePreviousToggle").checked = false;
+  $("comparePreviousToggle").disabled = true;
+  $("reportHistoryStatus").hidden = false;
+  $("reportHistoryStatus").textContent = "正在读取版本记录…";
+  $("reportHistoryList").innerHTML = "";
+  $("reportDiffPanel").hidden = true;
+  $("reportDiffFields").innerHTML = "";
+}
+
+async function refreshReportHistory(requestedSymbol = symbol, isCurrent = () => requestedSymbol === symbol) {
+  try {
+    const reports = await request(`/api/research/stock/${encodeURIComponent(requestedSymbol)}/reports?limit=8`);
+    if (!isCurrent()) return;
+    latestReports = Array.isArray(reports) ? reports : [];
+    renderReportHistory(requestedSymbol);
+  } catch (error) {
+    if (!isCurrent()) return;
+    latestReports = [];
+    closeReportComparison();
+    $("comparePreviousToggle").disabled = true;
+    $("reportHistoryList").innerHTML = "";
+    $("reportHistoryStatus").hidden = false;
+    $("reportHistoryStatus").textContent = `版本记录暂时无法读取：${error.message}`;
+  }
+}
+
+function renderReportHistory(requestedSymbol) {
+  const historyStatus = $("reportHistoryStatus");
+  const compareToggle = $("comparePreviousToggle");
+  compareToggle.disabled = latestReports.length < 2;
+  if (latestReports.length < 2 && compareToggle.checked) {
+    compareToggle.checked = false;
+    closeReportComparison();
+  }
+  if (!latestReports.length) {
+    historyStatus.hidden = false;
+    historyStatus.textContent = "还没有可归档的报告。生成两版分析后，即可查看结论变化。";
+    $("reportHistoryList").innerHTML = "";
+    return;
+  }
+  historyStatus.hidden = false;
+  historyStatus.textContent = latestReports.length > 1
+    ? `已保存 ${latestReports.length} 个版本，最新两版可直接对照。`
+    : "已保存首个版本；再生成一版即可开启对比。";
+  $("reportHistoryList").innerHTML = latestReports.map((report, index) => {
+    const version = Number(report.reportVersion || latestReports.length - index);
+    const safeReportId = encodeURIComponent(report.id || "");
+    const safeSymbol = encodeURIComponent(requestedSymbol);
+    const summary = String(report.summary || "暂无结论摘要").trim();
+    const meta = [
+      formatDateTime(report.generatedAt) || "时间待记录",
+      report.model || report.source || "规则报告",
+      report.dataSnapshotHash ? `快照 ${String(report.dataSnapshotHash).slice(0, 10)}` : "快照待记录"
+    ].join(" · ");
+    return `
+      <li class="report-history-row">
+        <div class="report-version">V${escapeHtml(version)}${index === 0 ? "<small>最新</small>" : ""}</div>
+        <div class="report-history-copy">
+          <strong>${escapeHtml(report.rating || "等待确认")} · ${escapeHtml(summary)}</strong>
+          <p title="${escapeHtml(meta)}">${escapeHtml(meta)}</p>
+        </div>
+        <div class="report-export-actions" aria-label="导出 V${escapeHtml(version)}">
+          <a href="/api/research/stock/${safeSymbol}/reports/${safeReportId}.md" download>Markdown</a>
+          <a href="/api/research/stock/${safeSymbol}/reports/${safeReportId}.pdf" download>PDF</a>
+        </div>
+      </li>
+    `;
+  }).join("");
+  if (compareToggle.checked) {
+    openLatestReportComparison();
+  }
+}
+
+async function openLatestReportComparison() {
+  if (latestReports.length < 2) return;
+  const generation = ++reportDiffGeneration;
+  const [to, from] = latestReports;
+  const panel = $("reportDiffPanel");
+  panel.hidden = false;
+  $("reportDiffMeta").textContent = "正在读取差异…";
+  $("reportDiffFields").innerHTML = '<p class="report-history-status">正在计算字段级变化…</p>';
+  try {
+    const diff = await request(
+      `/api/research/stock/${encodeURIComponent(symbol)}/reports/${encodeURIComponent(from.id)}/diff/${encodeURIComponent(to.id)}`
+    );
+    if (generation !== reportDiffGeneration || !$("comparePreviousToggle").checked) return;
+    renderReportDiff(diff);
+  } catch (error) {
+    if (generation !== reportDiffGeneration) return;
+    $("reportDiffMeta").textContent = "对比暂不可用";
+    $("reportDiffFields").innerHTML = `<p class="report-history-status">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderReportDiff(diff) {
+  const from = diff?.from || {};
+  const to = diff?.to || {};
+  $("reportDiffHeading").textContent = `V${Number(to.reportVersion || 0)} 与 V${Number(from.reportVersion || 0)}`;
+  const flags = [
+    diff?.dataSnapshotHashChanged ? "数据快照已变化" : "数据快照一致",
+    diff?.contextHashChanged ? "研究上下文已变化" : "研究上下文一致"
+  ];
+  $("reportDiffMeta").textContent = `${formatDateTime(from.generatedAt) || "上一版"} → ${formatDateTime(to.generatedAt) || "最新版"} · ${flags.join(" · ")}`;
+  const fields = [
+    ["评级", diff?.rating],
+    ["结论摘要", diff?.summary],
+    ["支持依据", diff?.positivePoints],
+    ["风险与失效信号", diff?.riskPoints],
+    ["引用证据", diff?.citations]
+  ];
+  $("reportDiffFields").innerHTML = fields.map(([label, field]) => reportDiffField(label, field, from, to)).join("");
+}
+
+function reportDiffField(label, field = {}, from = {}, to = {}) {
+  const changed = Boolean(field.changed);
+  return `
+    <article class="report-diff-field ${changed ? "changed" : ""}">
+      <header>
+        <h3>${escapeHtml(label)}</h3>
+        <span class="report-diff-state ${changed ? "changed" : ""}">${changed ? "已变化" : "未变化"}</span>
+      </header>
+      <div class="report-diff-columns">
+        <section class="report-diff-side">
+          <span>V${escapeHtml(Number(from.reportVersion || 0))} · 之前</span>
+          ${reportDiffValue(field.before)}
+        </section>
+        <section class="report-diff-side">
+          <span>V${escapeHtml(Number(to.reportVersion || 0))} · 现在</span>
+          ${reportDiffValue(field.after)}
+        </section>
+      </div>
+    </article>
+  `;
+}
+
+function reportDiffValue(values) {
+  const rows = Array.isArray(values) ? values.filter(value => String(value || "").trim()) : [];
+  if (!rows.length) return "<p>暂无内容</p>";
+  if (rows.length === 1) return `<p>${escapeHtml(rows[0])}</p>`;
+  return `<ul>${rows.map(value => `<li>${escapeHtml(value)}</li>`).join("")}</ul>`;
+}
+
+function closeReportComparison() {
+  reportDiffGeneration += 1;
+  $("comparePreviousToggle").checked = false;
+  $("reportDiffPanel").hidden = true;
+  $("reportDiffFields").innerHTML = "";
 }
 
 function analysisGuidance(aiAnalysis, fallbackPriority, supporting = [], risks = []) {
@@ -1005,6 +1162,7 @@ async function refreshCompletedAnalysis(workflowSymbol, currentWorkflowGeneratio
     }
   }, 1800);
   refreshAnalysisInputs(workflowSymbol, currentWorkflowGeneration);
+  refreshReportHistory(workflowSymbol, () => workflowSymbol === symbol && currentWorkflowGeneration === workflowGeneration);
 }
 
 function refreshAnalysisInputs(workflowSymbol, currentWorkflowGeneration) {
@@ -1584,6 +1742,14 @@ $("searchInput").addEventListener("keydown", event => {
 });
 $("symbolSearchButton").addEventListener("click", () => selectSymbol($("symbolInput").value));
 $("openAnalysisEvidence").addEventListener("click", () => setWorkspace("evidence"));
+$("comparePreviousToggle").addEventListener("change", event => {
+  if (event.currentTarget.checked) {
+    openLatestReportComparison();
+  } else {
+    closeReportComparison();
+  }
+});
+$("closeReportDiff").addEventListener("click", closeReportComparison);
 $("addCurrentToWatchlist").addEventListener("click", addCurrentCompanyToWatchlist);
 $("symbolInput").addEventListener("keydown", event => {
   if (event.key === "Enter") {

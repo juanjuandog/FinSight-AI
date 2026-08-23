@@ -13,6 +13,8 @@ This roadmap focuses on turning FinSight from a strong engineering prototype int
 - Redis Lua single-flight lease with fencing token.
 - Workflow timeout recovery and retry.
 - Versioned AI report persistence with `dataSnapshotHash`.
+- Report diff view between `reportVersion`s.
+- Report export to Markdown/PDF.
 - RAG evaluation metrics and demo dashboard.
 - English and Chinese README.
 
@@ -29,9 +31,7 @@ This roadmap focuses on turning FinSight from a strong engineering prototype int
 ## Mid Term
 
 - Add multi-agent planning for research tasks.
-- Add report diff view between `reportVersion`s.
 - Add evaluation trend history.
-- Add report export to Markdown/PDF.
 - Add OpenTelemetry tracing for workflow and retrieval spans.
 - Add Elasticsearch retrieval as an optional backend.
 

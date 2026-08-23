@@ -171,6 +171,7 @@ mvn test
 - [Benchmark and Evaluation](docs/benchmark.md)
 - [Product Requirements](docs/product-requirements.md)
 - [Accounts and Personal Workspace PRD](docs/prd-user-accounts-and-workspaces.md)
+- [Development and Integration Tests](docs/development.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

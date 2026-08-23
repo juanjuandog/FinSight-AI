@@ -171,6 +171,7 @@ mvn test
 - [Benchmark 与评测](docs/benchmark.md)
 - [产品需求](docs/product-requirements.md)
 - [账户与个人工作区 PRD](docs/prd-user-accounts-and-workspaces.md)
+- [开发与集成测试](docs/development.md)
 - [故障排查](docs/troubleshooting.md)
 - [Roadmap](ROADMAP.md)
 - [参与贡献](CONTRIBUTING.md)

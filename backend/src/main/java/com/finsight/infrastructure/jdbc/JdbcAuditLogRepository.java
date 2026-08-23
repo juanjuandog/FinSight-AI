@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +30,7 @@ public class JdbcAuditLogRepository implements AuditLogRepository {
 
     @Override
     public AuditLogEntry save(AuditLogEntry entry) {
+        Instant createdAt = entry.createdAt() == null ? Instant.now() : entry.createdAt();
         Map<String, Object> params = new HashMap<>();
         params.put("event_type", entry.eventType());
         params.put("actor", entry.actor());
@@ -36,10 +38,10 @@ public class JdbcAuditLogRepository implements AuditLogRepository {
         params.put("resource", entry.resource());
         params.put("detail", entry.detail());
         params.put("status", entry.status());
-        params.put("created_at", entry.createdAt() == null ? Instant.now() : entry.createdAt());
+        params.put("created_at", Timestamp.from(createdAt));
         Number id = insert.executeAndReturnKey(params);
         return new AuditLogEntry(id.longValue(), entry.eventType(), entry.actor(), entry.clientKey(),
-                entry.resource(), entry.detail(), entry.status(), entry.createdAt());
+                entry.resource(), entry.detail(), entry.status(), createdAt);
     }
 
     @Override

@@ -63,4 +63,4 @@ jobs:
         run: bash -n scripts/*.sh
 
       - name: Check Python service syntax
-        run: python3 -m py_compile ai-service/app/main.py ai-service/app/model_runtime.py scripts/benchmark_api.py
+        run: python3 -m py_compile ai-service/app/main.py ai-service/app/model_runtime.py scripts/benchmark_api.py scripts/update_contributors.py

@@ -184,10 +184,73 @@ FinSight 当前面向 A 股研究和本地 Production-like 演示，已提供邮
 ## 贡献者
 
 感谢所有为 FinSight AI 做出贡献的朋友。
+该列表会在默认分支每次推送后及每天定时根据提交记录自动生成。
 
-<a href="https://github.com/juanjuandog/FinSight-AI/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=juanjuandog/FinSight-AI" height="96" alt="FinSight AI 贡献者">
-</a>
+<!-- CONTRIBUTORS:START -->
+<!-- 由 scripts/update_contributors.py 自动生成，请勿手动编辑。 -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" width="110">
+        <a href="https://github.com/juanjuandog">
+          <img src="https://avatars.githubusercontent.com/u/212179655?v=4" width="72" height="72" alt="juanjuandog"><br>
+          <sub><b>juanjuandog</b></sub><br>
+          <sub>80 次提交</sub>
+        </a>
+      </td>
+      <td align="center" width="110">
+        <a href="https://github.com/liuzedongqq">
+          <img src="https://avatars.githubusercontent.com/u/42766899?v=4" width="72" height="72" alt="liuzedongqq"><br>
+          <sub><b>liuzedongqq</b></sub><br>
+          <sub>20 次提交</sub>
+        </a>
+      </td>
+      <td align="center" width="110">
+        <a href="https://github.com/Inference1">
+          <img src="https://avatars.githubusercontent.com/u/68734681?v=4" width="72" height="72" alt="Inference1"><br>
+          <sub><b>Inference1</b></sub><br>
+          <sub>5 次提交</sub>
+        </a>
+      </td>
+      <td align="center" width="110">
+        <a href="https://github.com/Neon549">
+          <img src="https://avatars.githubusercontent.com/u/222335687?v=4" width="72" height="72" alt="Neon549"><br>
+          <sub><b>Neon549</b></sub><br>
+          <sub>5 次提交</sub>
+        </a>
+      </td>
+      <td align="center" width="110">
+        <a href="https://github.com/4tj">
+          <img src="https://avatars.githubusercontent.com/u/1736244?v=4" width="72" height="72" alt="4tj"><br>
+          <sub><b>4tj</b></sub><br>
+          <sub>2 次提交</sub>
+        </a>
+      </td>
+      <td align="center" width="110">
+        <a href="https://github.com/faceWang753">
+          <img src="https://avatars.githubusercontent.com/u/44287435?v=4" width="72" height="72" alt="faceWang753"><br>
+          <sub><b>faceWang753</b></sub><br>
+          <sub>1 次提交</sub>
+        </a>
+      </td>
+      <td align="center" width="110">
+        <a href="https://github.com/Qhhhhhhhhhhhh">
+          <img src="https://avatars.githubusercontent.com/u/314590662?v=4" width="72" height="72" alt="Qhhhhhhhhhhhh"><br>
+          <sub><b>Qhhhhhhhhhhhh</b></sub><br>
+          <sub>1 次提交</sub>
+        </a>
+      </td>
+      <td align="center" width="110">
+        <a href="https://github.com/ShinyHero666">
+          <img src="https://avatars.githubusercontent.com/u/160204855?v=4" width="72" height="72" alt="ShinyHero666"><br>
+          <sub><b>ShinyHero666</b></sub><br>
+          <sub>1 次提交</sub>
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<!-- CONTRIBUTORS:END -->
 
 ## License
 
